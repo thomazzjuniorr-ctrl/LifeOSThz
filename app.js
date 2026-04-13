@@ -1,6 +1,6 @@
-ï»¿import { buildSeedState } from "./data/seed.js";
-import { GoogleCalendarService } from "./services/google-calendar.js";
-import { loadAppState, resetAppState, saveAppState } from "./services/storage.js";
+import { buildSeedState } from "./seed.js";
+import { GoogleCalendarService } from "./google-calendar.js";
+import { loadAppState, resetAppState, saveAppState } from "./storage.js";
 import {
   addInboxTask,
   applyGoogleBusyBlocks,
@@ -29,8 +29,8 @@ import {
   setWeeklyEnergy,
   toggleEditMode,
   toggleHabitForDate,
-} from "./utils/engine.js";
-import { formatISODate, formatShortDate } from "./utils/date.js";
+} from "./engine.js";
+import { formatISODate, formatShortDate } from "./date.js";
 
 const APP_VERSION = 4;
 const MOBILE_BREAKPOINT = 900;
@@ -189,7 +189,7 @@ function taskCard(task, options = {}) {
         <div>
           <div class="meta-row">${headerPills}</div>
           <h4>${escapeHtml(task.title)}</h4>
-          <p>${escapeHtml(task.gtdDecision)}${task.frogLabel ? ` â€¢ ${escapeHtml(task.frogLabel)}` : ""}</p>
+          <p>${escapeHtml(task.gtdDecision)}${task.frogLabel ? ` • ${escapeHtml(task.frogLabel)}` : ""}</p>
         </div>
         ${badge(`Score ${Math.round(task.score)}`, task.critical ? "danger" : "")}
       </div>
@@ -249,7 +249,7 @@ function layoutCard(page, cardId, title, body, model, options = {}) {
           <button class="ghost-button small" data-action="resize-layout-card" data-layout-page="${page}" data-layout-card="${cardId}" data-layout-dimension="width" data-layout-direction="increase" aria-label="Aumentar largura ${escapeHtml(title)}">+ largura</button>
           <button class="ghost-button small" data-action="resize-layout-card" data-layout-page="${page}" data-layout-card="${cardId}" data-layout-dimension="height" data-layout-direction="decrease" aria-label="Diminuir altura ${escapeHtml(title)}">- altura</button>
           <button class="ghost-button small" data-action="resize-layout-card" data-layout-page="${page}" data-layout-card="${cardId}" data-layout-dimension="height" data-layout-direction="increase" aria-label="Aumentar altura ${escapeHtml(title)}">+ altura</button>
-          <span class="layout-size-pill">${escapeHtml(LAYOUT_WIDTH_LABELS[layoutItem.width] || layoutItem.width)} â€¢ ${escapeHtml(LAYOUT_HEIGHT_LABELS[layoutItem.height] || layoutItem.height)}</span>
+          <span class="layout-size-pill">${escapeHtml(LAYOUT_WIDTH_LABELS[layoutItem.width] || layoutItem.width)} • ${escapeHtml(LAYOUT_HEIGHT_LABELS[layoutItem.height] || layoutItem.height)}</span>
         </div>
       </div>
     `
@@ -428,7 +428,7 @@ function renderHeader(model, options = {}) {
           <div>
             <span class="page-kicker">Semana ativa</span>
             <h3>${escapeHtml(model.selectedDay.longLabel)}</h3>
-            <p>${escapeHtml(model.selectedDay.type.label)} â€¢ ${model.selectedDay.totalLoad}/${model.selectedDay.totalCapacity} min â€¢ ${model.selectedDay.alerts} alerta(s)</p>
+            <p>${escapeHtml(model.selectedDay.type.label)} • ${model.selectedDay.totalLoad}/${model.selectedDay.totalCapacity} min • ${model.selectedDay.alerts} alerta(s)</p>
           </div>
           <div class="meta-row">
             ${metaPills([
@@ -563,7 +563,7 @@ function renderTodayPage(model, options = {}) {
       <div>
         <span class="page-kicker">${escapeHtml(model.selectedDay.type.label)}</span>
         <h3>${escapeHtml(topPriorities[0]?.title || model.dashboard.currentSprint?.title || "Dia organizado para caber na sua rotina real")}</h3>
-        <p>${escapeHtml(model.selectedDay.longLabel)} â€¢ ${model.selectedDay.totalLoad}/${model.selectedDay.totalCapacity} min â€¢ ${model.selectedDay.alerts} alerta(s)</p>
+        <p>${escapeHtml(model.selectedDay.longLabel)} • ${model.selectedDay.totalLoad}/${model.selectedDay.totalCapacity} min • ${model.selectedDay.alerts} alerta(s)</p>
       </div>
       <div class="toolbar-row">
         <button class="secondary-button" data-action="navigate" data-section="prioritize">Abrir priorizacao</button>
@@ -727,7 +727,7 @@ function renderSettingsPage(model) {
 function renderFloatingAlert(task, options = {}) {
   if (!task) return "";
   const mobileClass = options.isMobile ? " mobile" : "";
-  return `<div class="floating-alert-shell${mobileClass}"><div class="floating-alert-card${mobileClass}" role="alertdialog" aria-modal="true"><span class="page-kicker">Alerta critico</span><h3>${escapeHtml(task.title)}</h3><p>${escapeHtml(task.areaName)}${task.projectName ? ` â€¢ ${escapeHtml(task.projectName)}` : ""}</p><p class="muted-copy">Motivo: ${escapeHtml(task.reasons.join(" | "))}</p><div class="toolbar-row"><button class="primary-button" data-task-action="resolve-now" data-task-id="${task.id}">Resolver agora</button><button class="secondary-button" data-task-action="auto-defer" data-task-id="${task.id}">Adiar</button><button class="ghost-button" data-task-action="delegate" data-task-id="${task.id}">Delegar</button><button class="ghost-button" data-task-action="accept-risk" data-task-id="${task.id}">Ignorar com risco</button></div></div></div>`;
+  return `<div class="floating-alert-shell${mobileClass}"><div class="floating-alert-card${mobileClass}" role="alertdialog" aria-modal="true"><span class="page-kicker">Alerta critico</span><h3>${escapeHtml(task.title)}</h3><p>${escapeHtml(task.areaName)}${task.projectName ? ` • ${escapeHtml(task.projectName)}` : ""}</p><p class="muted-copy">Motivo: ${escapeHtml(task.reasons.join(" | "))}</p><div class="toolbar-row"><button class="primary-button" data-task-action="resolve-now" data-task-id="${task.id}">Resolver agora</button><button class="secondary-button" data-task-action="auto-defer" data-task-id="${task.id}">Adiar</button><button class="ghost-button" data-task-action="delegate" data-task-id="${task.id}">Delegar</button><button class="ghost-button" data-task-action="accept-risk" data-task-id="${task.id}">Ignorar com risco</button></div></div></div>`;
 }
 
 function renderEditorModal(editorView, options) {
@@ -794,7 +794,7 @@ function renderLayoutSummary(layouts = {}) {
     <article class="layout-summary-card">
       <strong>${escapeHtml(page === "dashboard" ? "Dashboard" : "Hoje")}</strong>
       <div class="layout-summary-list">
-        ${(entries || []).map((entry) => `<span class="meta-pill">${escapeHtml(entry.id)} â€¢ ${escapeHtml(LAYOUT_WIDTH_LABELS[entry.width] || entry.width)} â€¢ ${escapeHtml(LAYOUT_HEIGHT_LABELS[entry.height] || entry.height)}</span>`).join("")}
+        ${(entries || []).map((entry) => `<span class="meta-pill">${escapeHtml(entry.id)} • ${escapeHtml(LAYOUT_WIDTH_LABELS[entry.width] || entry.width)} • ${escapeHtml(LAYOUT_HEIGHT_LABELS[entry.height] || entry.height)}</span>`).join("")}
       </div>
     </article>
   `).join("");
@@ -1012,6 +1012,7 @@ export class LifeOSApp {
       : `<div class="app-shell desktop-shell density-${escapeHtml(model.settings.visualDensity)} tone-${escapeHtml(model.settings.accentTone)}">${this.toast ? `<div class="toast">${escapeHtml(this.toast)}</div>` : ""}<main class="workspace-root">${renderHeader(model, { isMobile: false })}<section class="workspace-desktop-grid"><div class="workspace-sidebar-column">${renderSidebar(model, { isMobile: false, navOpen: false })}</div><section class="workspace-content-column"><div class="page-shell">${renderActivePage(model, { isMobile: false })}</div>${renderFooter(model)}</section></section></main>${renderFloatingAlert(model.activeSection === "today" ? model.floatingAlert : null, { isMobile: false })}${renderEditorModal(model.editorView, model.options)}</div>`;
   }
 }
+
 
 
 

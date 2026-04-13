@@ -1,4 +1,4 @@
-import { getRuntimeConfig } from "./runtime-config.js";
+import { getRuntimeConfig } from "./runtime-config-service.js";
 
 const DISCOVERY_DOC =
   "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest";
@@ -142,3 +142,4 @@ export class GoogleCalendarService {
       }));
   }
 }
+

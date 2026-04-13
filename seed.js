@@ -3,7 +3,7 @@ import {
   formatISODate,
   getQuarterLabel,
   getWeekDates,
-} from "../utils/date.js";
+} from "./date.js";
 
 function task(overrides) {
   const now = new Date().toISOString();
@@ -388,3 +388,4 @@ export function buildSeedState(baseDate = new Date()) {
     references: { weekDates, today, monday, tuesday, wednesday, thursday, friday, saturday, sunday, tomorrow, plus2, plus3, plus4, currentQuarter },
   };
 }
+

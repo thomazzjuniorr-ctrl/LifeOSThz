@@ -1,21 +1,29 @@
-LIFE OS THZ 2026 - VERCEL STATIC
+LIFE OS THZ 2026 - GITHUB WEB FLAT
 
-Use esta pasta para publicar sem npm, sem build e sem dependencias.
+Esta versao foi preparada para upload simples pela interface web do GitHub.
 
-Passo mais simples:
+Use assim:
 
 1. Crie um repositorio NOVO no GitHub.
-2. Envie TODOS os arquivos desta pasta para esse repositorio.
-3. Confirme que na raiz do GitHub existem:
-   - index.html
-   - styles.css
-   - runtime-config.js
-   - vercel.json
-   - pasta src
-   - pasta public
-4. Na Vercel, importe ESSE repositorio novo.
-5. Nao preencha build command.
-6. Nao preencha output directory.
+2. Envie TODOS os arquivos desta pasta para a raiz do repositorio.
+3. Nao precisa manter subpastas.
+4. Na Vercel, importe esse repositorio.
+5. Deixe Build Command vazio.
+6. Deixe Output Directory vazio.
 7. Clique em Deploy.
 
-Esta versao foi preparada para ser publicada como site estatico puro.
+Arquivos importantes na raiz:
+- index.html
+- styles.css
+- runtime-config.js
+- main.js
+- app.js
+- engine.js
+- seed.js
+- date.js
+- storage.js
+- google-calendar.js
+- runtime-config-service.js
+- icon-192.svg
+- icon-512.svg
+- vercel.json

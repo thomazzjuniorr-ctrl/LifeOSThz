@@ -1,4 +1,4 @@
-import { getRuntimeConfig } from "./runtime-config.js";
+import { getRuntimeConfig } from "./runtime-config-service.js";
 
 const AUTH_SESSION_KEY = "life-os-thz-2026-auth-session";
 
@@ -53,3 +53,4 @@ export class AuthService {
     throw new Error("Fluxo Google Auth reservado para a proxima etapa da arquitetura.");
   }
 }
+
