@@ -16,10 +16,11 @@ function humanizeVoiceError(code = "") {
 }
 
 export function getVoiceCaptureSupport() {
+  const secureContext = typeof window !== "undefined" ? window.isSecureContext : false;
   const ctor = typeof window !== "undefined" ? getRecognitionCtor() : null;
   return {
-    supported: Boolean(ctor),
-    mode: ctor ? "native-browser" : "manual-fallback",
+    supported: Boolean(ctor && secureContext),
+    mode: ctor && secureContext ? "native-browser" : "manual-fallback",
   };
 }
 
@@ -32,8 +33,12 @@ export function createVoiceRecognizer({
 } = {}) {
   const RecognitionCtor = getRecognitionCtor();
 
+  if (typeof window !== "undefined" && !window.isSecureContext) {
+    throw new Error("Captura por voz exige HTTPS ou localhost.");
+  }
+
   if (!RecognitionCtor) {
-    throw new Error("Reconhecimento de voz nao disponivel neste navegador.");
+    throw new Error("Reconhecimento de voz nao disponivel neste navegador. Use Chrome ou Edge atualizados.");
   }
 
   const recognition = new RecognitionCtor();
