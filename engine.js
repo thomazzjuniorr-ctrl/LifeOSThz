@@ -35,8 +35,36 @@ const DEFAULT_LAYOUTS = {
   today: [
     { id: "focus", width: "full", height: "regular", frame: null },
     { id: "queue", width: "medium", height: "regular", frame: null },
-    { id: "calendar", width: "medium", height: "regular", frame: null },
+    { id: "checklist", width: "medium", height: "regular", frame: null },
     { id: "alerts", width: "full", height: "regular", frame: null },
+  ],
+  prioritize: [
+    { id: "pipeline", width: "full", height: "regular", frame: null },
+    { id: "frogs", width: "medium", height: "regular", frame: null },
+    { id: "auto", width: "medium", height: "regular", frame: null },
+    { id: "ranked", width: "full", height: "tall", frame: null },
+  ],
+  organize: [
+    { id: "board", width: "full", height: "tall", frame: null },
+    { id: "summary", width: "full", height: "compact", frame: null },
+  ],
+  routine: [
+    { id: "today", width: "full", height: "regular", frame: null },
+    { id: "habits", width: "medium", height: "regular", frame: null },
+    { id: "calendar", width: "medium", height: "regular", frame: null },
+    { id: "energy", width: "full", height: "compact", frame: null },
+  ],
+  health: [
+    { id: "overview", width: "full", height: "compact", frame: null },
+    { id: "care", width: "medium", height: "regular", frame: null },
+    { id: "diet", width: "medium", height: "regular", frame: null },
+    { id: "measurements", width: "medium", height: "regular", frame: null },
+    { id: "workouts", width: "medium", height: "regular", frame: null },
+    { id: "evolution", width: "full", height: "regular", frame: null },
+  ],
+  agenda: [
+    { id: "week", width: "full", height: "tall", frame: null },
+    { id: "editor", width: "full", height: "regular", frame: null },
   ],
 };
 
@@ -100,6 +128,40 @@ const TASK_CONTEXTS = [
   "creative",
 ];
 
+const VOICE_INTENTS = {
+  "create-task": { label: "Criar tarefa", destination: "inbox" },
+  "create-habit": { label: "Criar habito", destination: "routine" },
+  "add-checklist-item": { label: "Adicionar item de checklist", destination: "routine" },
+  "change-day-type": { label: "Mudar tipo de dia", destination: "days" },
+  schedule: { label: "Agendar", destination: "agenda" },
+  "register-weight": { label: "Registrar peso", destination: "health" },
+  "register-measure": { label: "Registrar medida", destination: "health" },
+  delegate: { label: "Delegar", destination: "project" },
+  reschedule: { label: "Remarcar", destination: "agenda" },
+};
+
+const VOICE_DESTINATIONS = {
+  inbox: "Inbox",
+  health: "Saude",
+  routine: "Rotina",
+  project: "Projeto",
+  agenda: "Agenda",
+  days: "Dias",
+};
+
+const VOICE_PERIOD_ALIASES = {
+  morning: ["manha", "cedo", "de manha"],
+  afternoon: ["tarde", "de tarde", "apos o almoco"],
+  night: ["noite", "a noite", "hoje a noite"],
+};
+
+const VOICE_URGENCY_KEYWORDS = {
+  5: ["urgente", "pra hoje", "hoje sem falta", "agora", "o quanto antes", "imediato"],
+  4: ["hoje", "amanha cedo", "amanha", "prioridade alta", "importante hoje"],
+  3: ["essa semana", "nesta semana", "quando der", "prioridade media"],
+  2: ["depois", "sem pressa", "baixa prioridade"],
+};
+
 function cloneValue(value) {
   return typeof structuredClone === "function"
     ? structuredClone(value)
@@ -155,6 +217,11 @@ function normalizeLayouts(layouts = DEFAULT_LAYOUTS, fallbackLayouts = DEFAULT_L
   return {
     dashboard: normalizeLayoutPage(layouts?.dashboard, fallbackLayouts.dashboard || DEFAULT_LAYOUTS.dashboard),
     today: normalizeLayoutPage(layouts?.today, fallbackLayouts.today || DEFAULT_LAYOUTS.today),
+    prioritize: normalizeLayoutPage(layouts?.prioritize, fallbackLayouts.prioritize || DEFAULT_LAYOUTS.prioritize),
+    organize: normalizeLayoutPage(layouts?.organize, fallbackLayouts.organize || DEFAULT_LAYOUTS.organize),
+    routine: normalizeLayoutPage(layouts?.routine, fallbackLayouts.routine || DEFAULT_LAYOUTS.routine),
+    health: normalizeLayoutPage(layouts?.health, fallbackLayouts.health || DEFAULT_LAYOUTS.health),
+    agenda: normalizeLayoutPage(layouts?.agenda, fallbackLayouts.agenda || DEFAULT_LAYOUTS.agenda),
   };
 }
 
@@ -209,6 +276,695 @@ function parseSubtasks(value, existing = []) {
   return existing || [];
 }
 
+function parseLines(value, existing = []) {
+  if (Array.isArray(value)) {
+    return value.filter(Boolean).map((item) => String(item).trim()).filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return existing || [];
+}
+
+function parseChecklist(value, existing = []) {
+  return parseLines(value, existing);
+}
+
+function normalizeSearchText(value = "") {
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function includesAnyKeyword(source, keywords = []) {
+  return keywords.some((keyword) => source.includes(normalizeSearchText(keyword)));
+}
+
+function matchesPhrase(source, phrase) {
+  const normalizedPhrase = normalizeSearchText(phrase).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`(^|\\s)${normalizedPhrase}(?=\\s|$)`);
+  return pattern.test(source);
+}
+
+function findNextWeekdayDate(referenceDate, weekdayKey) {
+  for (let offset = 0; offset <= 13; offset += 1) {
+    const candidate = formatISODate(addDays(referenceDate, offset));
+    if (getWeekdayKey(candidate) === weekdayKey) {
+      return candidate;
+    }
+  }
+
+  return "";
+}
+
+function defaultVoiceAssistantSettings() {
+  return {
+    projectAliases: [
+      { term: "assessoria", value: "project-assessoria" },
+      { term: "financeira", value: "project-financeira" },
+      { term: "movimento", value: "project-conteudo" },
+      { term: "conteudo", value: "project-conteudo" },
+    ],
+    areaAliases: [
+      { term: "cliente", value: "area-work" },
+      { term: "filhos", value: "area-family" },
+      { term: "casa", value: "area-home" },
+      { term: "saude", value: "area-health" },
+    ],
+    frequentAssociations: [
+      { term: "gravar", target: { projectId: "project-conteudo", areaId: "area-work", context: "creative", intent: "create-task", destination: "project" } },
+      { term: "cliente", target: { areaId: "area-work", context: "admin", intent: "create-task", destination: "inbox" } },
+      { term: "peso", target: { areaId: "area-health", context: "health", intent: "register-weight", destination: "health" } },
+      { term: "cintura", target: { areaId: "area-health", context: "health", intent: "register-measure", destination: "health" } },
+    ],
+    learnedPatterns: [],
+    history: [],
+  };
+}
+
+function parseVoiceAliasLines(value, fallback = []) {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => ({
+        term: normalizeSearchText(entry?.term || ""),
+        value: String(entry?.value || "").trim(),
+      }))
+      .filter((entry) => entry.term && entry.value);
+  }
+
+  if (typeof value !== "string") {
+    return cloneValue(fallback || []);
+  }
+
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [left = "", right = ""] = line.split(/\s*(?:=>|=|->)\s*/);
+      return {
+        term: normalizeSearchText(left),
+        value: String(right || "").trim(),
+      };
+    })
+    .filter((entry) => entry.term && entry.value);
+}
+
+function parseAssociationTarget(rawTarget = "") {
+  const target = {};
+  rawTarget
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .forEach((part) => {
+      const [left = "", right = ""] = part.split(/\s*:\s*/);
+      const key = normalizeSearchText(left);
+      const value = String(right || "").trim();
+      if (!value) {
+        return;
+      }
+
+      if (["project", "projeto"].includes(key)) target.projectId = value;
+      if (["area"].includes(key)) target.areaId = value;
+      if (["context", "contexto"].includes(key)) target.context = value;
+      if (["intent", "intencao"].includes(key)) target.intent = value;
+      if (["destination", "destino"].includes(key)) target.destination = value;
+      if (["daytype", "tipo-dia", "tipodia"].includes(key)) target.dayTypeId = value;
+      if (["period", "periodo"].includes(key)) target.period = value;
+    });
+  return target;
+}
+
+function parseVoiceAssociationLines(value, fallback = []) {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => ({
+        term: normalizeSearchText(entry?.term || ""),
+        target: { ...(entry?.target || {}) },
+      }))
+      .filter((entry) => entry.term);
+  }
+
+  if (typeof value !== "string") {
+    return cloneValue(fallback || []);
+  }
+
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [left = "", right = ""] = line.split(/\s*(?:=>|=|->)\s*/);
+      return {
+        term: normalizeSearchText(left),
+        target: parseAssociationTarget(right),
+      };
+    })
+    .filter((entry) => entry.term);
+}
+
+function formatVoiceAliasLines(entries = []) {
+  return (entries || [])
+    .map((entry) => `${entry.term} => ${entry.value}`)
+    .join("\n");
+}
+
+function formatVoiceAssociationLines(entries = []) {
+  return (entries || [])
+    .map((entry) => {
+      const target = entry.target || {};
+      const parts = [];
+      if (target.areaId) parts.push(`area:${target.areaId}`);
+      if (target.projectId) parts.push(`projeto:${target.projectId}`);
+      if (target.context) parts.push(`contexto:${target.context}`);
+      if (target.intent) parts.push(`intencao:${target.intent}`);
+      if (target.destination) parts.push(`destino:${target.destination}`);
+      if (target.dayTypeId) parts.push(`tipo-dia:${target.dayTypeId}`);
+      if (target.period) parts.push(`periodo:${target.period}`);
+      return `${entry.term} => ${parts.join(", ")}`;
+    })
+    .join("\n");
+}
+
+function getVoiceAssistantSettings(state) {
+  const defaults = defaultVoiceAssistantSettings();
+  const source = state?.settings?.voiceAssistant || {};
+  return {
+    projectAliases: parseVoiceAliasLines(source.projectAliases, defaults.projectAliases),
+    areaAliases: parseVoiceAliasLines(source.areaAliases, defaults.areaAliases),
+    frequentAssociations: parseVoiceAssociationLines(source.frequentAssociations, defaults.frequentAssociations),
+    learnedPatterns: Array.isArray(source.learnedPatterns) ? source.learnedPatterns.map((item) => ({
+      phrase: normalizeSearchText(item?.phrase || ""),
+      target: { ...(item?.target || {}) },
+      uses: toNumber(item?.uses, 1),
+      updatedAt: item?.updatedAt || nowIso(),
+    })).filter((item) => item.phrase) : [],
+    history: Array.isArray(source.history) ? source.history.slice(0, 60) : [],
+  };
+}
+
+function findAliasValue(text, entries = []) {
+  const match = (entries || []).find((entry) => text.includes(normalizeSearchText(entry.term)));
+  return match || null;
+}
+
+function mergeVoiceTarget(base, target = {}) {
+  return {
+    ...base,
+    areaId: target.areaId || base.areaId || "",
+    projectId: target.projectId || base.projectId || "",
+    context: target.context || base.context || "flex",
+    intent: target.intent || base.intent || "",
+    destination: target.destination || base.destination || "",
+    dayTypeId: target.dayTypeId || base.dayTypeId || "",
+    period: target.period || base.period || "",
+  };
+}
+
+function findLearnedVoiceTarget(text, learnedPatterns = []) {
+  const sorted = [...(learnedPatterns || [])].sort((left, right) => (right.uses - left.uses) || (right.phrase.length - left.phrase.length));
+  return sorted.find((entry) => text.includes(entry.phrase) || entry.phrase.includes(text)) || null;
+}
+
+function inferCaptureDate(text, referenceDate) {
+  if (!text) {
+    return { date: "", reason: "" };
+  }
+
+  if (text.includes("depois de amanha")) {
+    return { date: formatISODate(addDays(referenceDate, 2)), reason: "Reconheceu 'depois de amanha'." };
+  }
+
+  if (text.includes("amanha")) {
+    return { date: formatISODate(addDays(referenceDate, 1)), reason: "Reconheceu 'amanha'." };
+  }
+
+  if (text.includes("hoje")) {
+    return { date: referenceDate, reason: "Reconheceu 'hoje'." };
+  }
+
+  const weekdayMap = {
+    segunda: "segunda",
+    terca: "terca",
+    quarta: "quarta",
+    quinta: "quinta",
+    sexta: "sexta",
+    sabado: "sabado",
+    domingo: "domingo",
+  };
+
+  const matchedWeekday = Object.keys(weekdayMap).find((key) => text.includes(key));
+  if (matchedWeekday) {
+    return {
+      date: findNextWeekdayDate(referenceDate, weekdayMap[matchedWeekday]),
+      reason: `Reconheceu o dia '${matchedWeekday}'.`,
+    };
+  }
+
+  return { date: "", reason: "" };
+}
+
+function inferCapturePeriod(text) {
+  const matchedPeriod = Object.entries(VOICE_PERIOD_ALIASES).find(([, aliases]) => aliases.some((alias) => matchesPhrase(text, alias)));
+  if (!matchedPeriod) {
+    return { period: "", reason: "" };
+  }
+
+  const [period] = matchedPeriod;
+  return {
+    period,
+    reason: `Reconheceu o periodo '${period === "morning" ? "manha" : period === "afternoon" ? "tarde" : "noite"}'.`,
+  };
+}
+
+function inferCaptureUrgency(text) {
+  const matched = Object.entries(VOICE_URGENCY_KEYWORDS)
+    .sort((left, right) => Number(right[0]) - Number(left[0]))
+    .find(([, keywords]) => includesAnyKeyword(text, keywords));
+
+  if (!matched) {
+    return {
+      urgency: 3,
+      priority: "medium",
+      reason: "",
+    };
+  }
+
+  const urgency = Number(matched[0]);
+  return {
+    urgency,
+    priority: urgency >= 4 ? "high" : urgency <= 2 ? "low" : "medium",
+    reason: `Urgencia sugerida em ${urgency}/5 pelo jeito da fala.`,
+  };
+}
+
+function inferCaptureDuration(text) {
+  const match = text.match(/(\d+)\s*(min|minuto|minutos|h|hora|horas)\b/);
+  if (!match) {
+    return { estimatedMinutes: 30, reason: "" };
+  }
+
+  const value = Number(match[1] || 30);
+  const unit = match[2] || "min";
+  const estimatedMinutes = unit.startsWith("h") ? value * 60 : value;
+  return {
+    estimatedMinutes: Math.max(5, estimatedMinutes),
+    reason: `Duracao sugerida a partir de '${match[0]}'.`,
+  };
+}
+
+function inferCaptureDayType(text) {
+  if (includesAnyKeyword(text, ["futebol"])) {
+    return { dayTypeId: "soccer", reason: "Reconheceu mencao a futebol." };
+  }
+
+  if (includesAnyKeyword(text, ["viagem completa", "viagem longa"])) {
+    return { dayTypeId: "external", reason: "Reconheceu um dia quase bloqueado por viagem." };
+  }
+
+  if (includesAnyKeyword(text, ["viagem", "viajar"])) {
+    return { dayTypeId: "trip-short", reason: "Reconheceu mencao a viagem." };
+  }
+
+  if (includesAnyKeyword(text, ["reuniao", "reunioes", "call", "alinhamento"])) {
+    return { dayTypeId: "meeting", reason: "Reconheceu mencao a reuniao." };
+  }
+
+  if (includesAnyKeyword(text, ["visita", "externo", "campo", "rua", "presencial"])) {
+    return { dayTypeId: "external", reason: "Reconheceu deslocamento ou trabalho externo." };
+  }
+
+  return { dayTypeId: "", reason: "" };
+}
+
+function inferCaptureChecklist(transcript) {
+  const raw = String(transcript || "").trim();
+  if (!raw) {
+    return [];
+  }
+
+  if (raw.includes(":")) {
+    const [, detail = ""] = raw.split(/:(.+)/);
+    return detail
+      .split(/,|;|\be\b/)
+      .map((item) => item.trim())
+      .filter((item) => item.length >= 3)
+      .slice(0, 6);
+  }
+
+  const commaParts = raw
+    .split(/,|;/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (commaParts.length >= 2) {
+    return commaParts.slice(1, 6);
+  }
+
+  return [];
+}
+
+function inferCaptureTitle(transcript, checklist = []) {
+  const raw = String(transcript || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  if (raw.includes(":")) {
+    return raw.split(/:(.+)/)[0].trim();
+  }
+
+  if (checklist.length) {
+    return raw.split(/,|;/)[0].trim();
+  }
+
+  return raw;
+}
+
+function inferVoiceAction(text, intent) {
+  const verbs = ["criar", "adicionar", "agendar", "marcar", "remarcar", "delegar", "registrar", "mudar", "trocar", "gravar", "enviar", "fechar"];
+  const verb = verbs.find((item) => text.startsWith(`${item} `) || text.includes(` ${item} `));
+  if (verb) {
+    return verb;
+  }
+
+  return {
+    "create-task": "criar",
+    "create-habit": "criar",
+    "add-checklist-item": "adicionar",
+    "change-day-type": "mudar",
+    schedule: "agendar",
+    "register-weight": "registrar",
+    "register-measure": "registrar",
+    delegate: "delegar",
+    reschedule: "remarcar",
+  }[intent] || "registrar";
+}
+
+function inferHealthPayload(text, rawTranscript) {
+  const normalized = normalizeSearchText(text);
+  const raw = String(rawTranscript || "").replace(",", ".");
+  const weightMatch = raw.match(/(\d{2,3}(?:\.\d)?)\s*(kg|quilo|quilos)?/);
+  const measureKeys = [
+    { key: "waist", keywords: ["cintura"] },
+    { key: "chest", keywords: ["peito", "torax"] },
+    { key: "hip", keywords: ["quadril"] },
+    { key: "arm", keywords: ["braco", "braço"] },
+    { key: "thigh", keywords: ["coxa"] },
+  ];
+
+  const measures = {};
+  measureKeys.forEach((entry) => {
+    const match = raw.match(new RegExp(`(?:${entry.keywords.join("|")})\\s*(?:de|com)?\\s*(\\d{1,3}(?:\\.\\d)?)`, "i"));
+    if (match) {
+      measures[entry.key] = Number(match[1]);
+    }
+  });
+
+  return {
+    weight: includesAnyKeyword(normalized, ["peso", "kg", "quilo"]) && weightMatch ? Number(weightMatch[1]) : 0,
+    measures,
+  };
+}
+
+function inferCaptureIntent(text, target = {}) {
+  if (target.intent) {
+    return { intent: target.intent, reason: "Usou uma associacao personalizada da sua configuracao." };
+  }
+
+  if (includesAnyKeyword(text, ["delegar", "passar para", "pedir para"])) {
+    return { intent: "delegate", reason: "Reconheceu uma acao de delegacao." };
+  }
+
+  if (includesAnyKeyword(text, ["remarcar", "mover para", "jogar para", "empurrar para"])) {
+    return { intent: "reschedule", reason: "Reconheceu pedido de remarcar." };
+  }
+
+  if (includesAnyKeyword(text, ["agendar", "marcar para", "colocar na agenda"])) {
+    return { intent: "schedule", reason: "Reconheceu pedido de agenda." };
+  }
+
+  if (includesAnyKeyword(text, ["peso", "kg", "quilo", "quilos"])) {
+    return { intent: "register-weight", reason: "Reconheceu registro de peso." };
+  }
+
+  if (includesAnyKeyword(text, ["cintura", "quadril", "braco", "braço", "coxa", "peito", "medida", "medidas"])) {
+    return { intent: "register-measure", reason: "Reconheceu registro de medidas." };
+  }
+
+  if (includesAnyKeyword(text, ["tipo do dia", "dia de", "mudar a quarta", "mudar a sexta", "dia externo", "dia com reuniao", "futebol"])) {
+    return { intent: "change-day-type", reason: "Reconheceu mudanca de tipo de dia." };
+  }
+
+  if (includesAnyKeyword(text, ["habito", "todo dia", "toda manha", "toda noite", "todo domingo"])) {
+    return { intent: "create-habit", reason: "Reconheceu criacao de habito." };
+  }
+
+  if (includesAnyKeyword(text, ["checklist", "item na rotina", "adicionar item", "coloca na rotina"])) {
+    return { intent: "add-checklist-item", reason: "Reconheceu item de checklist." };
+  }
+
+  return { intent: "create-task", reason: "Tratou como tarefa nova por padrao." };
+}
+
+function inferCaptureAreaProjectContext(text, state, voiceSettings, intent) {
+  const manualProject = findAliasValue(text, voiceSettings.projectAliases);
+  const manualArea = findAliasValue(text, voiceSettings.areaAliases);
+  const learned = findLearnedVoiceTarget(text, voiceSettings.learnedPatterns);
+  let merged = mergeVoiceTarget({
+    areaId: manualArea?.value || "",
+    projectId: manualProject?.value || "",
+    context: "",
+    intent: "",
+    destination: "",
+    dayTypeId: "",
+    period: "",
+  }, learned?.target || {});
+
+  voiceSettings.frequentAssociations.forEach((entry) => {
+    if (text.includes(normalizeSearchText(entry.term))) {
+      merged = mergeVoiceTarget(merged, entry.target || {});
+    }
+  });
+
+  const rules = [
+    {
+      areaId: "area-work",
+      projectId: "project-assessoria",
+      context: "deep-work",
+      reason: "Relacionada a Assessoria.",
+      keywords: ["assessoria", "cliente", "clientes", "proposta", "follow up", "follow-up", "lead"],
+    },
+    {
+      areaId: "area-work",
+      projectId: "project-financeira",
+      context: "deep-work",
+      reason: "Relacionada a Financeira.",
+      keywords: ["financeira", "briefing", "credito", "analise", "contrato", "consignado"],
+    },
+    {
+      areaId: "area-work",
+      projectId: "project-conteudo",
+      context: "creative",
+      reason: "Relacionada a Conteudo / Movimento.",
+      keywords: ["conteudo", "movimento", "comunicacao", "roteiro", "post", "video", "gravar", "publicar"],
+    },
+    {
+      areaId: "area-health",
+      projectId: "",
+      context: "health",
+      reason: "Reconheceu tema de saude.",
+      keywords: ["saude", "treino", "musculacao", "peso", "dieta", "agua", "suplemento", "alongamento"],
+    },
+    {
+      areaId: "area-family",
+      projectId: "",
+      context: "home",
+      reason: "Reconheceu filhos / familia.",
+      keywords: ["filho", "filhos", "familia", "escola", "mochila", "uniforme"],
+    },
+    {
+      areaId: "area-home",
+      projectId: "",
+      context: "home",
+      reason: "Reconheceu tarefa de casa.",
+      keywords: ["casa", "limpeza", "armario", "cozinha", "lavar", "comprar", "mercado"],
+    },
+    {
+      areaId: "area-move",
+      projectId: "",
+      context: "planning",
+      reason: "Reconheceu tema de mudanca.",
+      keywords: ["mudanca", "aluguel", "imovel", "frete", "caixas", "espaco de trabalho"],
+    },
+    {
+      areaId: "area-finance",
+      projectId: "",
+      context: "admin",
+      reason: "Reconheceu financeiro pessoal.",
+      keywords: ["financeiro", "boleto", "conta", "cartao", "reserva", "pagamento", "pix"],
+    },
+    {
+      areaId: "area-personal",
+      projectId: "",
+      context: "planning",
+      reason: "Reconheceu tema pessoal.",
+      keywords: ["pessoal", "organizar mente", "reflexao", "anotacao", "anotar"],
+    },
+  ];
+
+  const matched = rules.find((rule) => includesAnyKeyword(text, rule.keywords));
+  const baseAreaId = merged.areaId || matched?.areaId || state.areas[0]?.id || "area-personal";
+  const baseProjectId = merged.projectId || matched?.projectId || "";
+  const baseContext = merged.context || matched?.context || (intent === "change-day-type" ? "planning" : "flex");
+  const reasons = [];
+
+  if (manualProject) reasons.push(`Alias de projeto: ${manualProject.term}.`);
+  if (manualArea) reasons.push(`Alias de area: ${manualArea.term}.`);
+  if (matched?.reason) reasons.push(matched.reason);
+  if (learned?.phrase) reasons.push("Aplicou um aprendizado salvo de correcoes anteriores.");
+  if (!reasons.length) reasons.push("Sem match forte, caiu na area padrao.");
+
+  return {
+    areaId: baseAreaId,
+    projectId: baseProjectId,
+    context: baseContext,
+    destination: merged.destination || "",
+    intent: merged.intent || "",
+    period: merged.period || "",
+    dayTypeId: merged.dayTypeId || "",
+    reasons,
+  };
+}
+
+function inferVoiceDestination(intent, areaProjectInfo) {
+  if (areaProjectInfo.projectId && ["create-task", "delegate", "schedule", "reschedule"].includes(intent) && (!areaProjectInfo.destination || areaProjectInfo.destination === "inbox")) {
+    return { destination: "project", reason: "Tem projeto claro e isso pesa mais do que a regra generica da area." };
+  }
+
+  if (areaProjectInfo.destination && VOICE_DESTINATIONS[areaProjectInfo.destination]) {
+    return { destination: areaProjectInfo.destination, reason: "Usou o destino da sua configuracao personalizada." };
+  }
+
+  if (intent === "register-weight" || intent === "register-measure") {
+    return { destination: "health", reason: "Vai para Saude por ser um registro corporal." };
+  }
+
+  if (intent === "create-habit" || intent === "add-checklist-item") {
+    return { destination: areaProjectInfo.areaId === "area-health" ? "health" : "routine", reason: "Vai para rotina/cuidados por ser um item recorrente." };
+  }
+
+  if (intent === "change-day-type") {
+    return { destination: "days", reason: "Vai para Dias porque muda a capacidade da semana." };
+  }
+
+  if (intent === "schedule" || intent === "reschedule") {
+    return { destination: "agenda", reason: "Vai para Agenda por envolver data e encaixe." };
+  }
+
+  if (intent === "delegate") {
+    return { destination: areaProjectInfo.projectId ? "project" : "inbox", reason: "Vai para projeto/inbox para seguir o fluxo central com delegacao clara." };
+  }
+
+  if (areaProjectInfo.projectId) {
+    return { destination: "project", reason: "Tem projeto claro e por isso cai no fluxo do projeto." };
+  }
+
+  return { destination: "inbox", reason: "Entra na Inbox para seguir GTD, Sapo e Organizar." };
+}
+
+function buildVoiceTitle(transcript, intent, checklist = []) {
+  const baseTitle = inferCaptureTitle(transcript, checklist);
+  if (baseTitle) {
+    return baseTitle;
+  }
+
+  return {
+    "create-habit": "Novo habito por voz",
+    "add-checklist-item": "Novo item de checklist por voz",
+    "change-day-type": "Ajuste de tipo de dia por voz",
+    "register-weight": "Registro de peso por voz",
+    "register-measure": "Registro de medida por voz",
+    schedule: "Novo agendamento por voz",
+    reschedule: "Reagendamento por voz",
+    delegate: "Delegacao por voz",
+    "create-task": "Nova tarefa por voz",
+  }[intent] || "Nova captura por voz";
+}
+
+export function analyzeCaptureText(state, transcript, referenceDate = formatISODate(new Date())) {
+  const cleanedTranscript = String(transcript || "").trim();
+  const normalizedTranscript = normalizeSearchText(cleanedTranscript);
+  const voiceSettings = getVoiceAssistantSettings(state);
+  const checklist = inferCaptureChecklist(cleanedTranscript);
+  const intentInfo = inferCaptureIntent(normalizedTranscript);
+  const areaInfo = inferCaptureAreaProjectContext(normalizedTranscript, state, voiceSettings, intentInfo.intent);
+  const dateInfo = inferCaptureDate(normalizedTranscript, referenceDate);
+  const dueDate = dateInfo.date || "";
+  const periodInfo = inferCapturePeriod(normalizedTranscript);
+  const urgencyInfo = inferCaptureUrgency(normalizedTranscript);
+  const durationInfo = inferCaptureDuration(normalizedTranscript);
+  const dayTypeInfo = inferCaptureDayType(normalizedTranscript);
+  const healthPayload = inferHealthPayload(normalizedTranscript, cleanedTranscript);
+  const mergedIntent = areaInfo.intent || intentInfo.intent;
+  const destinationInfo = inferVoiceDestination(mergedIntent, areaInfo);
+  const title = buildVoiceTitle(cleanedTranscript, mergedIntent, checklist);
+  const action = inferVoiceAction(normalizedTranscript, mergedIntent);
+  const reasons = [
+    intentInfo.reason,
+    ...areaInfo.reasons,
+    destinationInfo.reason,
+    dateInfo.reason,
+    periodInfo.reason,
+    urgencyInfo.reason,
+    durationInfo.reason,
+    dayTypeInfo.reason,
+    checklist.length ? "Extraiu proximas acoes do texto falado." : "",
+  ].filter(Boolean);
+
+  return {
+    transcript: cleanedTranscript,
+    action,
+    intent: mergedIntent,
+    intentLabel: VOICE_INTENTS[mergedIntent]?.label || mergedIntent,
+    destination: destinationInfo.destination,
+    destinationLabel: VOICE_DESTINATIONS[destinationInfo.destination] || destinationInfo.destination,
+    title,
+    areaId: areaInfo.areaId,
+    projectId: areaInfo.projectId || "",
+    scheduledDate: dateInfo.date || "",
+    dueDate,
+    scheduledPeriod: areaInfo.period || periodInfo.period || "",
+    estimatedMinutes: durationInfo.estimatedMinutes,
+    priority: urgencyInfo.priority,
+    urgency: urgencyInfo.urgency,
+    context: areaInfo.context || "flex",
+    checklist,
+    notes: "",
+    suggestedDayTypeId: areaInfo.dayTypeId || dayTypeInfo.dayTypeId || "",
+    healthWeight: healthPayload.weight || 0,
+    healthMeasures: healthPayload.measures || {},
+    reasons,
+  };
+}
+
+function normalizeDateLogEntries(entries = []) {
+  return Array.isArray(entries)
+    ? entries
+      .map((entry) => ({
+        date: entry?.date || "",
+        done: Boolean(entry?.done),
+      }))
+      .filter((entry) => entry.date)
+    : [];
+}
+
 function pushHistory(state, type, summary, meta = {}) {
   state.history.unshift({
     id: makeId("history"),
@@ -221,7 +977,7 @@ function pushHistory(state, type, summary, meta = {}) {
 }
 
 function prepareState(state) {
-  state.meta = state.meta || { appName: "Life OS Thz 2026", version: 4 };
+  state.meta = state.meta || { appName: "Life OS Thz 2026", version: 5 };
   state.profile = state.profile || {};
   state.tasks = state.tasks || [];
   state.areas = state.areas || [];
@@ -234,6 +990,26 @@ function prepareState(state) {
   state.habits = state.habits || [];
   state.history = state.history || [];
   state.routines = state.routines || { morning: [], night: [] };
+  state.health = {
+    weightLogs: Array.isArray(state.health?.weightLogs) ? state.health.weightLogs : [],
+    measureLogs: Array.isArray(state.health?.measureLogs) ? state.health.measureLogs : [],
+    careItems: Array.isArray(state.health?.careItems) ? state.health.careItems.map((item) => ({
+      id: item.id || makeId("care"),
+      title: item.title || "Novo cuidado",
+      note: item.note || "",
+      logs: normalizeDateLogEntries(item.logs || []),
+    })) : [],
+    workouts: Array.isArray(state.health?.workouts) ? state.health.workouts : [],
+    dietMeals: Array.isArray(state.health?.dietMeals) ? state.health.dietMeals.map((meal) => ({
+      id: meal.id || makeId("diet"),
+      mealKey: meal.mealKey || "custom",
+      title: meal.title || "Nova refeicao",
+      plan: meal.plan || "",
+      checklist: parseChecklist(meal.checklist || [], []),
+      note: meal.note || "",
+      logs: normalizeDateLogEntries(meal.logs || []),
+    })) : [],
+  };
   state.weeklyPlan = {
     energyLevel: toNumber(state.weeklyPlan?.energyLevel, 3),
     mainFocus: state.weeklyPlan?.mainFocus || "",
@@ -245,7 +1021,7 @@ function prepareState(state) {
   state.settings = {
     editMode: Boolean(state.settings?.editMode),
     visualDensity: state.settings?.visualDensity || "calm",
-    accentTone: state.settings?.accentTone || "sand",
+    accentTone: state.settings?.accentTone || "forest",
     layoutDefaults,
     layouts,
     layoutMode: state.settings?.layoutMode || "flex-grid",
@@ -263,6 +1039,7 @@ function prepareState(state) {
       overloadLimit: toNumber(state.settings?.prioritization?.overloadLimit, 0.92),
     },
     reasoningLine: state.settings?.reasoningLine || "",
+    voiceAssistant: getVoiceAssistantSettings(state),
     googleCalendar: {
       clientId: state.settings?.googleCalendar?.clientId || "",
       apiKey: state.settings?.googleCalendar?.apiKey || "",
@@ -783,11 +1560,12 @@ function enrichTask(task, state, referenceDate, method = state.ui.priorityMethod
   const dayProfile = task.scheduledDate ? resolveDayProfile(state, task.scheduledDate) : null;
   const flags = reasoningFlags(state);
   const autoGtd = classifyTask(task, state, referenceDate, flags);
+  const manualPriority = task.priorityMode === "manual";
   const gtd = {
-    stage: task.gtdStage || autoGtd.stage,
-    decision: task.gtdDecision || autoGtd.decision,
-    nextAction: task.nextAction || autoGtd.nextAction,
-    bucket: task.finalBucket || autoGtd.bucket,
+    stage: manualPriority ? (task.gtdStage || autoGtd.stage) : autoGtd.stage,
+    decision: manualPriority ? (task.gtdDecision || autoGtd.decision) : autoGtd.decision,
+    nextAction: manualPriority ? (task.nextAction || autoGtd.nextAction) : autoGtd.nextAction,
+    bucket: manualPriority ? (task.finalBucket || autoGtd.bucket) : autoGtd.bucket,
     reasons: autoGtd.reasons,
   };
   const scored = scoreTask(task, state, referenceDate, dayProfile, gtd, flags, method);
@@ -810,6 +1588,7 @@ function enrichTask(task, state, referenceDate, method = state.ui.priorityMethod
     gtdDecision: gtd.decision,
     nextAction: gtd.nextAction,
     finalBucket: gtd.bucket,
+    priorityMode: manualPriority ? "manual" : "auto",
     score: scored.score,
     reasons: scored.reasons,
     suggestions: buildSuggestions(task, gtd, scored.score, referenceDate, dayProfile),
@@ -1029,6 +1808,134 @@ function buildProjectSummaries(state, tasks) {
   });
 }
 
+function buildHabitWeekMatrix(habit, weekDates, selectedDate) {
+  return weekDates.map((date) => {
+    const existing = (habit.logs || []).find((entry) => entry.date === date);
+    return {
+      date,
+      shortLabel: formatShortDate(date),
+      done: Boolean(existing?.done),
+      selected: date === selectedDate,
+    };
+  });
+}
+
+function buildTodayChecklistModel(state, tasks, selectedDate, weekData) {
+  const routines = [
+    ...(state.routines.morning || []).map((item) => ({
+      id: item.id,
+      kind: "routine",
+      title: item.title,
+      period: "Manha",
+      done: false,
+      note: item.note || "",
+    })),
+    ...(state.routines.night || []).map((item) => ({
+      id: item.id,
+      kind: "routine",
+      title: item.title,
+      period: "Noite",
+      done: false,
+      note: item.note || "",
+    })),
+  ];
+
+  const habits = state.habits.map((habit) => {
+    const log = (habit.logs || []).find((entry) => entry.date === selectedDate);
+    return {
+      id: habit.id,
+      kind: "habit",
+      title: habit.title,
+      period: "Habito",
+      done: Boolean(log?.done),
+      note: habit.note || "",
+    };
+  });
+
+  const care = state.health.careItems.map((item) => {
+    const log = (item.logs || []).find((entry) => entry.date === selectedDate);
+    return {
+      id: item.id,
+      kind: "care",
+      title: item.title,
+      period: "Saude",
+      done: Boolean(log?.done),
+      note: item.note || "",
+    };
+  });
+
+  const meals = state.health.dietMeals.map((meal) => {
+    const log = (meal.logs || []).find((entry) => entry.date === selectedDate);
+    return {
+      id: meal.id,
+      kind: "diet",
+      title: meal.title,
+      period: "Dieta",
+      done: Boolean(log?.done),
+      note: meal.plan || meal.note || "",
+    };
+  });
+
+  const quickTasks = tasks
+    .filter((task) => task.scheduledDate === selectedDate)
+    .slice(0, 6)
+    .map((task) => ({
+      id: task.id,
+      kind: "task",
+      title: task.title,
+      period: task.periodLabel,
+      done: task.status === "done",
+      note: task.nextAction || "",
+    }));
+
+  return {
+    items: [...quickTasks, ...routines, ...habits, ...care, ...meals],
+    weekDates: weekData.dates,
+  };
+}
+
+function buildHealthModel(state, tasks, selectedDate, weekData) {
+  const weightLogs = [...state.health.weightLogs].sort((left, right) => right.date.localeCompare(left.date));
+  const measureLogs = [...state.health.measureLogs].sort((left, right) => right.date.localeCompare(left.date));
+  const workouts = [...state.health.workouts].sort((left, right) => right.date.localeCompare(left.date));
+  const latestWeight = weightLogs[0] || null;
+  const previousWeight = weightLogs[1] || null;
+  const careItems = state.health.careItems.map((item) => ({
+    ...item,
+    doneToday: Boolean((item.logs || []).find((entry) => entry.date === selectedDate)?.done),
+  }));
+  const dietMeals = state.health.dietMeals.map((meal) => ({
+    ...meal,
+    doneToday: Boolean((meal.logs || []).find((entry) => entry.date === selectedDate)?.done),
+  }));
+  const weekWorkouts = workouts.filter((entry) => weekData.dates.includes(entry.date));
+  const careDoneCount = careItems.filter((item) => item.doneToday).length;
+  const dietDoneCount = dietMeals.filter((item) => item.doneToday).length;
+  const latestMeasures = measureLogs[0] || null;
+
+  return {
+    stats: {
+      weight: latestWeight ? latestWeight.weight : 0,
+      weightDelta: latestWeight && previousWeight ? Math.round((latestWeight.weight - previousWeight.weight) * 10) / 10 : 0,
+      workouts: weekWorkouts.length,
+      careDone: `${careDoneCount}/${Math.max(1, careItems.length)}`,
+      dietDone: `${dietDoneCount}/${Math.max(1, dietMeals.length)}`,
+    },
+    weightLogs: weightLogs.slice(0, 6),
+    measureLogs: measureLogs.slice(0, 6),
+    latestMeasures,
+    careItems,
+    dietMeals,
+    workouts: workouts.slice(0, 6),
+    healthTasks: tasks.filter((task) => task.areaId === "area-health").slice(0, 6),
+    evolution: {
+      weights: weightLogs.slice(0, 6).reverse(),
+      measures: measureLogs.slice(0, 4).reverse(),
+    },
+    selectedDate,
+  };
+}
+
 function buildDashboardModel(state, tasks, selectedDate, weekData) {
   const currentSprint = state.sprints.find((sprint) => sprint.status === "current") || null;
   const sprintObjectives = currentSprint
@@ -1087,6 +1994,15 @@ function buildPrioritizeModel(tasks, selectedDate) {
     ranked: ranked.slice(0, 12),
     dayFrog: ranked.find((task) => task.frogDay) || null,
     weekFrog: ranked.find((task) => task.frogWeek) || null,
+    autoPilot: ranked.slice(0, 5).map((task) => ({
+      id: task.id,
+      title: task.title,
+      decision: task.gtdDecision,
+      bucket: task.finalBucket,
+      reasons: task.reasons,
+      nextAction: task.nextAction,
+      priorityMode: task.priorityMode || "auto",
+    })),
     stages: [
       "Processar",
       "Executar",
@@ -1112,7 +2028,7 @@ function buildPrioritizeModel(tasks, selectedDate) {
 function buildOrganizeModel(tasks) {
   return ORGANIZE_BUCKETS.map((bucket) => ({
     ...bucket,
-    tasks: tasks.filter((task) => task.finalBucket === bucket.id).slice(0, 8),
+    tasks: tasks.filter((task) => task.finalBucket === bucket.id),
   }));
 }
 
@@ -1123,6 +2039,8 @@ function buildRoutineModel(state, tasks, selectedDate, weekData) {
       ...habit,
       done,
       percent: clamp(Math.round(done * 100 / Math.max(1, habit.targetPerWeek)), 0, 100),
+      week: buildHabitWeekMatrix(habit, weekData.dates, selectedDate),
+      doneToday: Boolean((habit.logs || []).find((entry) => entry.date === selectedDate)?.done),
     };
   });
 
@@ -1131,7 +2049,34 @@ function buildRoutineModel(state, tasks, selectedDate, weekData) {
     night: [...(state.routines.night || [])].sort((left, right) => left.order - right.order),
     habits: habitProgress,
     healthTasks: tasks.filter((task) => task.areaId === "area-health" && weekData.dates.includes(task.scheduledDate)).slice(0, 6),
+    careItems: state.health.careItems.map((item) => ({
+      ...item,
+      doneToday: Boolean((item.logs || []).find((entry) => entry.date === selectedDate)?.done),
+    })),
+    weekDates: weekData.dates,
     selectedDate,
+  };
+}
+
+function buildAgendaModel(state, tasks, weekData, selectedDate) {
+  const blocks = state.blocks.filter((block) => weekData.dates.includes(block.date));
+  const agendaEditorTasks = tasks
+    .filter((task) => task.scheduledDate === selectedDate)
+    .map((task) => ({
+      ...task,
+      canEdit: true,
+    }));
+  const agendaEditorBlocks = blocks.filter((block) => block.date === selectedDate);
+
+  return {
+    days: weekData.days,
+    connected: state.calendar.connected,
+    google: state.settings.googleCalendar,
+    editor: {
+      date: selectedDate,
+      tasks: agendaEditorTasks,
+      blocks: agendaEditorBlocks,
+    },
   };
 }
 
@@ -1157,6 +2102,14 @@ function buildSettingsModel(state) {
     layoutMode: state.settings.layoutMode,
     layoutCapabilities: state.settings.layoutCapabilities,
     architecture: state.settings.architecture,
+    voiceAssistant: {
+      ...cloneValue(state.settings.voiceAssistant),
+      projectAliasesText: formatVoiceAliasLines(state.settings.voiceAssistant.projectAliases),
+      areaAliasesText: formatVoiceAliasLines(state.settings.voiceAssistant.areaAliases),
+      frequentAssociationsText: formatVoiceAssociationLines(state.settings.voiceAssistant.frequentAssociations),
+      history: cloneValue(state.settings.voiceAssistant.history || []).slice(0, 12),
+      learnedPatterns: cloneValue(state.settings.voiceAssistant.learnedPatterns || []).slice(0, 10),
+    },
   };
 }
 
@@ -1185,8 +2138,9 @@ function blankEntity(kind, state) {
       energyCost: 2,
       nextAction: "",
       gtdStage: "clarify",
-      gtdDecision: "Executar",
-      finalBucket: "priority",
+      gtdDecision: "",
+      finalBucket: "",
+      priorityMode: "auto",
       frog: "",
       scoreAdjustment: 0,
       notes: "",
@@ -1223,6 +2177,26 @@ function blankEntity(kind, state) {
     return { id: "", title: "", period: "morning", areaId: "area-routine", order: 1, active: true, recurring: true, note: "" };
   }
 
+  if (kind === "health-weight") {
+    return { id: "", date: state.ui.selectedDate, weight: 0, note: "" };
+  }
+
+  if (kind === "health-measure") {
+    return { id: "", date: state.ui.selectedDate, waist: 0, chest: 0, hip: 0, arm: 0, thigh: 0, note: "" };
+  }
+
+  if (kind === "health-care") {
+    return { id: "", title: "", note: "" };
+  }
+
+  if (kind === "health-workout") {
+    return { id: "", date: state.ui.selectedDate, title: "", type: "casa", duration: 30, status: "planned", note: "" };
+  }
+
+  if (kind === "diet-meal") {
+    return { id: "", mealKey: "custom", title: "", plan: "", checklist: [], note: "" };
+  }
+
   return { id: "", date: state.ui.selectedDate, typeId: getDefaultDayTypeId(state, state.ui.selectedDate), periods: defaultPeriodsForType(state, getDefaultDayTypeId(state, state.ui.selectedDate)), note: "" };
 }
 
@@ -1244,6 +2218,11 @@ function buildEditorView(state) {
     if (kind === "objective") return state.objectives.find((entry) => entry.id === id) || blankEntity(kind, state);
     if (kind === "habit") return state.habits.find((entry) => entry.id === id) || blankEntity(kind, state);
     if (kind === "block") return state.blocks.find((entry) => entry.id === id) || blankEntity(kind, state);
+    if (kind === "health-weight") return state.health.weightLogs.find((entry) => entry.id === id) || blankEntity(kind, state);
+    if (kind === "health-measure") return state.health.measureLogs.find((entry) => entry.id === id) || blankEntity(kind, state);
+    if (kind === "health-care") return state.health.careItems.find((entry) => entry.id === id) || blankEntity(kind, state);
+    if (kind === "health-workout") return state.health.workouts.find((entry) => entry.id === id) || blankEntity(kind, state);
+    if (kind === "diet-meal") return state.health.dietMeals.find((entry) => entry.id === id) || blankEntity(kind, state);
     if (kind === "routine") {
       return [...(state.routines.morning || []), ...(state.routines.night || [])].find((entry) => entry.id === id) || blankEntity(kind, state);
     }
@@ -1269,6 +2248,9 @@ export function buildAppModel(inputState, referenceDate = new Date()) {
   const organize = buildOrganizeModel(filteredTasks);
   const inbox = filteredTasks.filter((task) => task.location === "inbox");
   const settings = buildSettingsModel(state);
+  const health = buildHealthModel(state, filteredTasks, selectedDate, weekData);
+  const todayChecklist = buildTodayChecklistModel(state, filteredTasks, selectedDate, weekData);
+  const agenda = buildAgendaModel(state, filteredTasks, weekData, selectedDate);
   const floatingAlert = selectedDay.tasks.find(
     (task) => task.critical && !task.riskAccepted && (task.manualDecision || selectedDay.lowCapacity || task.location === "alert"),
   ) || null;
@@ -1290,12 +2272,10 @@ export function buildAppModel(inputState, referenceDate = new Date()) {
     areas: buildAreaSummaries(state, filteredTasks),
     projects: buildProjectSummaries(state, filteredTasks),
     routine: buildRoutineModel(state, filteredTasks, selectedDate, weekData),
+    health,
     planning: buildPlanningModel(state, filteredTasks),
-    agenda: {
-      days: weekData.days,
-      connected: state.calendar.connected,
-      google: state.settings.googleCalendar,
-    },
+    agenda,
+    todayChecklist,
     settings,
     editorView: buildEditorView(state),
     floatingAlert,
@@ -1310,6 +2290,8 @@ export function buildAppModel(inputState, referenceDate = new Date()) {
       buckets: ORGANIZE_BUCKETS,
       taskTypes: TASK_TYPES,
       contexts: TASK_CONTEXTS,
+      voiceIntents: Object.entries(VOICE_INTENTS).map(([id, entry]) => ({ id, ...entry })),
+      voiceDestinations: Object.entries(VOICE_DESTINATIONS).map(([id, label]) => ({ id, label })),
       scopes: [
         { id: "integrated", label: "Integrado" },
         { id: "personal", label: "Foco pessoal" },
@@ -1350,8 +2332,9 @@ function normalizeTaskPayload(state, payload = {}, existing = null) {
     energyCost: toNumber(payload.energyCost, existing?.energyCost || 2),
     nextAction: payload.nextAction || existing?.nextAction || "",
     gtdStage: payload.gtdStage || existing?.gtdStage || "clarify",
-    gtdDecision: payload.gtdDecision || existing?.gtdDecision || "Executar",
-    finalBucket: payload.finalBucket || existing?.finalBucket || "priority",
+    gtdDecision: payload.gtdDecision || existing?.gtdDecision || "",
+    finalBucket: payload.finalBucket || existing?.finalBucket || "",
+    priorityMode: payload.priorityMode || existing?.priorityMode || "auto",
     frog: payload.frog || existing?.frog || "",
     scoreAdjustment: toNumber(payload.scoreAdjustment, existing?.scoreAdjustment || 0),
     notes: payload.notes || existing?.notes || "",
@@ -1443,6 +2426,61 @@ function normalizeRoutinePayload(payload = {}, existing = null) {
     active: toBoolean(payload.active, existing?.active !== false),
     recurring: toBoolean(payload.recurring, existing?.recurring !== false),
     note: payload.note || existing?.note || "",
+  };
+}
+
+function normalizeHealthWeightPayload(payload = {}, existing = null) {
+  return {
+    id: payload.id || existing?.id || makeId("weight"),
+    date: payload.date || existing?.date || formatISODate(new Date()),
+    weight: toNumber(payload.weight, existing?.weight || 0),
+    note: payload.note || existing?.note || "",
+  };
+}
+
+function normalizeHealthMeasurePayload(payload = {}, existing = null) {
+  return {
+    id: payload.id || existing?.id || makeId("measure"),
+    date: payload.date || existing?.date || formatISODate(new Date()),
+    waist: toNumber(payload.waist, existing?.waist || 0),
+    chest: toNumber(payload.chest, existing?.chest || 0),
+    hip: toNumber(payload.hip, existing?.hip || 0),
+    arm: toNumber(payload.arm, existing?.arm || 0),
+    thigh: toNumber(payload.thigh, existing?.thigh || 0),
+    note: payload.note || existing?.note || "",
+  };
+}
+
+function normalizeHealthCarePayload(payload = {}, existing = null) {
+  return {
+    id: payload.id || existing?.id || makeId("care"),
+    title: String(payload.title || existing?.title || "Novo cuidado").trim(),
+    note: payload.note || existing?.note || "",
+    logs: existing?.logs || [],
+  };
+}
+
+function normalizeHealthWorkoutPayload(payload = {}, existing = null) {
+  return {
+    id: payload.id || existing?.id || makeId("workout"),
+    date: payload.date || existing?.date || formatISODate(new Date()),
+    title: String(payload.title || existing?.title || "Novo treino").trim(),
+    type: payload.type || existing?.type || "casa",
+    duration: toNumber(payload.duration, existing?.duration || 30),
+    status: payload.status || existing?.status || "planned",
+    note: payload.note || existing?.note || "",
+  };
+}
+
+function normalizeDietMealPayload(payload = {}, existing = null) {
+  return {
+    id: payload.id || existing?.id || makeId("diet"),
+    mealKey: payload.mealKey || existing?.mealKey || "custom",
+    title: String(payload.title || existing?.title || "Nova refeicao").trim(),
+    plan: payload.plan || existing?.plan || "",
+    checklist: parseChecklist(payload.checklist, existing?.checklist || []),
+    note: payload.note || existing?.note || "",
+    logs: existing?.logs || [],
   };
 }
 
@@ -1657,12 +2695,448 @@ export function toggleHabitForDate(state, habitId, date) {
   return nextState;
 }
 
+function toggleDateLog(logs = [], date) {
+  const nextLogs = Array.isArray(logs) ? [...logs] : [];
+  const existing = nextLogs.find((entry) => entry.date === date);
+  if (existing) {
+    existing.done = !existing.done;
+  } else {
+    nextLogs.push({ date, done: true });
+  }
+  return nextLogs;
+}
+
+export function toggleHealthCareForDate(state, itemId, date) {
+  const nextState = cloneState(state);
+  const item = nextState.health.careItems.find((entry) => entry.id === itemId);
+  if (!item) return nextState;
+  item.logs = toggleDateLog(item.logs || [], date);
+  pushHistory(nextState, "health-care-toggle", `Checklist de cuidado atualizado: ${item.title}`);
+  return nextState;
+}
+
+export function toggleDietMealForDate(state, itemId, date) {
+  const nextState = cloneState(state);
+  const meal = nextState.health.dietMeals.find((entry) => entry.id === itemId);
+  if (!meal) return nextState;
+  meal.logs = toggleDateLog(meal.logs || [], date);
+  pushHistory(nextState, "diet-toggle", `Refeicao atualizada: ${meal.title}`);
+  return nextState;
+}
+
+export function moveTaskToBucket(state, taskId, bucketId) {
+  const nextState = cloneState(state);
+  const task = getTaskById(nextState, taskId);
+  if (!task) return nextState;
+  task.finalBucket = bucketId;
+  task.priorityMode = "manual";
+  task.location = bucketId === "backlog"
+    ? "backlog"
+    : bucketId === "delegate"
+      ? "delegated"
+      : bucketId === "waiting"
+        ? "waiting"
+        : "scheduled";
+  task.status = bucketId === "delegate"
+    ? "delegated"
+    : bucketId === "waiting"
+      ? "waiting"
+      : bucketId === "backlog"
+        ? "backlog"
+        : "todo";
+  pushHistory(nextState, "organize-bucket", `Tarefa movida para ${bucketId}: ${task.title}`);
+  return nextState;
+}
+
+export function updateTaskSchedule(state, taskId, updates = {}) {
+  const nextState = cloneState(state);
+  const task = getTaskById(nextState, taskId);
+  if (!task) return nextState;
+  task.scheduledDate = updates.scheduledDate || task.scheduledDate;
+  task.scheduledPeriod = updates.scheduledPeriod || task.scheduledPeriod || guessPeriod(task);
+  task.location = "scheduled";
+  task.status = ["delegated", "waiting", "discarded", "done"].includes(task.status) ? task.status : "todo";
+  task.manualDecision = false;
+  task.updatedAt = nowIso();
+  pushHistory(nextState, "agenda-task", `Agenda atualizada para ${task.title}.`);
+  return nextState;
+}
+
+export function updateBlockSchedule(state, blockId, updates = {}) {
+  const nextState = cloneState(state);
+  const block = nextState.blocks.find((entry) => entry.id === blockId);
+  if (!block) return nextState;
+  block.date = updates.date || block.date;
+  block.period = updates.period || block.period;
+  block.startTime = updates.startTime || block.startTime;
+  block.endTime = updates.endTime || block.endTime;
+  block.note = updates.note ?? block.note;
+  pushHistory(nextState, "agenda-block", `Bloco atualizado: ${block.title}.`);
+  return nextState;
+}
+
+export function saveHealthWeight(state, payload) {
+  const nextState = cloneState(state);
+  const entry = {
+    id: payload.id || makeId("weight"),
+    date: payload.date || formatISODate(new Date()),
+    weight: toNumber(payload.weight, 0),
+    note: payload.note || "",
+  };
+  nextState.health.weightLogs = nextState.health.weightLogs.filter((item) => item.id !== entry.id);
+  nextState.health.weightLogs.unshift(entry);
+  pushHistory(nextState, "health-weight", `Peso registrado em ${entry.date}.`);
+  return nextState;
+}
+
+export function saveHealthMeasure(state, payload) {
+  const nextState = cloneState(state);
+  const entry = {
+    id: payload.id || makeId("measure"),
+    date: payload.date || formatISODate(new Date()),
+    waist: toNumber(payload.waist, 0),
+    chest: toNumber(payload.chest, 0),
+    hip: toNumber(payload.hip, 0),
+    arm: toNumber(payload.arm, 0),
+    thigh: toNumber(payload.thigh, 0),
+    note: payload.note || "",
+  };
+  nextState.health.measureLogs = nextState.health.measureLogs.filter((item) => item.id !== entry.id);
+  nextState.health.measureLogs.unshift(entry);
+  pushHistory(nextState, "health-measure", `Medidas registradas em ${entry.date}.`);
+  return nextState;
+}
+
+export function saveHealthCareItem(state, payload) {
+  const nextState = cloneState(state);
+  const entry = {
+    id: payload.id || makeId("care"),
+    title: String(payload.title || "Novo cuidado").trim(),
+    note: payload.note || "",
+    logs: nextState.health.careItems.find((item) => item.id === payload.id)?.logs || [],
+  };
+  nextState.health.careItems = nextState.health.careItems.filter((item) => item.id !== entry.id);
+  nextState.health.careItems.push(entry);
+  pushHistory(nextState, "health-care-item", `Item de cuidado salvo: ${entry.title}.`);
+  return nextState;
+}
+
+export function saveHealthWorkout(state, payload) {
+  const nextState = cloneState(state);
+  const entry = {
+    id: payload.id || makeId("workout"),
+    date: payload.date || formatISODate(new Date()),
+    title: String(payload.title || "Novo treino").trim(),
+    type: payload.type || "casa",
+    duration: toNumber(payload.duration, 30),
+    status: payload.status || "planned",
+    note: payload.note || "",
+  };
+  nextState.health.workouts = nextState.health.workouts.filter((item) => item.id !== entry.id);
+  nextState.health.workouts.unshift(entry);
+  pushHistory(nextState, "health-workout", `Treino salvo: ${entry.title}.`);
+  return nextState;
+}
+
+export function saveDietMeal(state, payload) {
+  const nextState = cloneState(state);
+  const existing = nextState.health.dietMeals.find((item) => item.id === payload.id);
+  const entry = {
+    id: payload.id || makeId("diet"),
+    mealKey: payload.mealKey || existing?.mealKey || "custom",
+    title: String(payload.title || existing?.title || "Nova refeicao").trim(),
+    plan: payload.plan || existing?.plan || "",
+    checklist: parseChecklist(payload.checklist, existing?.checklist || []),
+    note: payload.note || existing?.note || "",
+    logs: existing?.logs || [],
+  };
+  nextState.health.dietMeals = nextState.health.dietMeals.filter((item) => item.id !== entry.id);
+  nextState.health.dietMeals.push(entry);
+  pushHistory(nextState, "diet-meal", `Refeicao salva: ${entry.title}.`);
+  return nextState;
+}
+
 export function addInboxTask(state, payload) {
   const nextState = cloneState(state);
-  const task = normalizeTaskPayload(nextState, { ...payload, location: "inbox", status: "inbox", source: "capture" }, null);
+  const task = normalizeTaskPayload(nextState, {
+    ...payload,
+    subtasks: payload.checklist || payload.subtasks || [],
+    location: "inbox",
+    status: "inbox",
+    source: "capture",
+  }, null);
   nextState.tasks.unshift(task);
   pushHistory(nextState, "task-captured", `Nova tarefa capturada: ${task.title}`);
   return nextState;
+}
+
+function diffVoiceInterpretation(understood = {}, corrected = {}) {
+  const comparedFields = [
+    "intent",
+    "destination",
+    "title",
+    "areaId",
+    "projectId",
+    "scheduledDate",
+    "dueDate",
+    "scheduledPeriod",
+    "priority",
+    "urgency",
+    "context",
+    "suggestedDayTypeId",
+  ];
+
+  return comparedFields
+    .filter((field) => String(understood?.[field] ?? "") !== String(corrected?.[field] ?? ""))
+    .map((field) => ({
+      field,
+      from: understood?.[field] ?? "",
+      to: corrected?.[field] ?? "",
+    }));
+}
+
+function buildVoiceLearningPhrase(transcript = "") {
+  return normalizeSearchText(transcript)
+    .split(/\s+/)
+    .filter((token) => token.length >= 3)
+    .slice(0, 8)
+    .join(" ");
+}
+
+function saveVoiceLearning(state, transcript, corrected = {}, corrections = []) {
+  const phrase = buildVoiceLearningPhrase(transcript);
+  if (!phrase || !corrections.length) {
+    return;
+  }
+
+  const target = {
+    intent: corrected.intent || "",
+    destination: corrected.destination || "",
+    areaId: corrected.areaId || "",
+    projectId: corrected.projectId || "",
+    context: corrected.context || "",
+    dayTypeId: corrected.suggestedDayTypeId || "",
+    period: corrected.scheduledPeriod || "",
+  };
+
+  const existing = state.settings.voiceAssistant.learnedPatterns.find((entry) => entry.phrase === phrase);
+  if (existing) {
+    existing.target = { ...existing.target, ...target };
+    existing.uses = toNumber(existing.uses, 1) + 1;
+    existing.updatedAt = nowIso();
+    return;
+  }
+
+  state.settings.voiceAssistant.learnedPatterns.unshift({
+    phrase,
+    target,
+    uses: 1,
+    updatedAt: nowIso(),
+  });
+  state.settings.voiceAssistant.learnedPatterns = state.settings.voiceAssistant.learnedPatterns.slice(0, 30);
+}
+
+function saveVoiceInterpretationHistory(state, meta = {}) {
+  const item = {
+    id: makeId("voice"),
+    transcript: meta.transcript || "",
+    sourceSection: meta.sourceSection || "inbox",
+    understood: cloneValue(meta.understood || {}),
+    corrected: cloneValue(meta.corrected || {}),
+    corrections: cloneValue(meta.corrections || []),
+    savedAt: nowIso(),
+  };
+
+  state.settings.voiceAssistant.history.unshift(item);
+  state.settings.voiceAssistant.history = state.settings.voiceAssistant.history.slice(0, 60);
+}
+
+function addScheduledVoiceTask(state, payload = {}) {
+  const task = normalizeTaskPayload(state, {
+    ...payload,
+    location: "scheduled",
+    status: "todo",
+    source: "voice",
+  }, null);
+  state.tasks.unshift(task);
+  pushHistory(state, "voice-schedule", `Captura por voz salva na agenda: ${task.title}`);
+}
+
+function addDelegatedVoiceTask(state, payload = {}) {
+  const task = normalizeTaskPayload(state, {
+    ...payload,
+    location: "delegated",
+    status: "delegated",
+    finalBucket: "delegate",
+    gtdDecision: "Delegar",
+    priorityMode: "manual",
+    manualDecision: false,
+    source: "voice",
+  }, null);
+  state.tasks.unshift(task);
+  pushHistory(state, "voice-delegate", `Captura por voz marcada para delegar: ${task.title}`);
+}
+
+export function confirmVoiceCapture(state, payload = {}, meta = {}) {
+  const nextState = cloneState(state);
+  const transcript = String(payload.transcript || meta.transcript || "").trim();
+  const corrected = {
+    ...payload,
+    transcript,
+    checklist: parseChecklist(payload.checklist, []),
+    notes: String(payload.notes || ""),
+    estimatedMinutes: toNumber(payload.estimatedMinutes, 30),
+    urgency: toNumber(payload.urgency, 3),
+    priority: payload.priority || "medium",
+    scheduledDate: payload.scheduledDate || "",
+    dueDate: payload.dueDate || "",
+    scheduledPeriod: payload.scheduledPeriod || "",
+    intent: payload.intent || "create-task",
+    destination: payload.destination || "inbox",
+    healthWeight: toNumber(payload.healthWeight, 0),
+    waist: toNumber(payload.waist, 0),
+    chest: toNumber(payload.chest, 0),
+    hip: toNumber(payload.hip, 0),
+    arm: toNumber(payload.arm, 0),
+    thigh: toNumber(payload.thigh, 0),
+  };
+  const understood = meta.understood || {};
+  const corrections = diffVoiceInterpretation(understood, corrected);
+
+  saveVoiceInterpretationHistory(nextState, {
+    transcript,
+    sourceSection: meta.sourceSection || "inbox",
+    understood,
+    corrected,
+    corrections,
+  });
+  saveVoiceLearning(nextState, transcript, corrected, corrections);
+
+  const notesWithTranscript = [corrected.notes, transcript ? `Captura por voz: ${transcript}` : ""]
+    .filter(Boolean)
+    .join("\n");
+
+  if (corrected.intent === "register-weight" || corrected.destination === "health" && corrected.healthWeight > 0) {
+    const saved = saveHealthWeight(nextState, {
+      date: corrected.scheduledDate || corrected.dueDate || nextState.ui.selectedDate,
+      weight: corrected.healthWeight,
+      note: notesWithTranscript,
+    });
+    return { nextState: saved, message: "Registro de peso salvo a partir da voz." };
+  }
+
+  if (corrected.intent === "register-measure") {
+    const saved = saveHealthMeasure(nextState, {
+      date: corrected.scheduledDate || corrected.dueDate || nextState.ui.selectedDate,
+      waist: corrected.waist,
+      chest: corrected.chest,
+      hip: corrected.hip,
+      arm: corrected.arm,
+      thigh: corrected.thigh,
+      note: notesWithTranscript,
+    });
+    return { nextState: saved, message: "Registro de medidas salvo a partir da voz." };
+  }
+
+  if (corrected.intent === "create-habit") {
+    const habit = normalizeHabitPayload({
+      title: corrected.title,
+      areaId: corrected.areaId || "area-health",
+      targetPerWeek: includesAnyKeyword(normalizeSearchText(transcript), ["todo dia", "todos os dias"]) ? 7 : 3,
+      note: notesWithTranscript,
+    }, null);
+    nextState.habits.unshift(habit);
+    pushHistory(nextState, "voice-habit", `Habito criado por voz: ${habit.title}`);
+    return { nextState, message: "Habito criado a partir da voz." };
+  }
+
+  if (corrected.intent === "add-checklist-item") {
+    if (corrected.destination === "health" || corrected.areaId === "area-health") {
+      const saved = saveHealthCareItem(nextState, {
+        title: corrected.title,
+        note: notesWithTranscript,
+      });
+      return { nextState: saved, message: "Item de cuidados salvo a partir da voz." };
+    }
+
+    const routine = normalizeRoutinePayload({
+      title: corrected.title,
+      period: corrected.scheduledPeriod || "morning",
+      areaId: corrected.areaId || "area-routine",
+      note: notesWithTranscript,
+      order: 99,
+    }, null);
+    setRoutineItem(nextState, routine);
+    pushHistory(nextState, "voice-routine", `Item de rotina criado por voz: ${routine.title}`);
+    return { nextState, message: "Item de rotina salvo a partir da voz." };
+  }
+
+  if (corrected.intent === "change-day-type") {
+    const targetDate = corrected.scheduledDate || corrected.dueDate || nextState.ui.selectedDate;
+    const targetType = corrected.suggestedDayTypeId || "normal";
+    if (corrected.scheduledPeriod) {
+      const result = setDayPeriodType(nextState, targetDate, corrected.scheduledPeriod, targetType);
+      return { nextState: result.nextState, message: `Periodo do dia ajustado por voz: ${result.movedCount} movidas, ${result.alertCount} alertas.` };
+    }
+    const result = setDayType(nextState, targetDate, targetType);
+    return { nextState: result.nextState, message: `Tipo de dia ajustado por voz: ${result.movedCount} movidas, ${result.alertCount} alertas.` };
+  }
+
+  if (corrected.intent === "schedule" || corrected.intent === "reschedule" || corrected.destination === "agenda") {
+    addScheduledVoiceTask(nextState, {
+      title: corrected.title,
+      areaId: corrected.areaId,
+      projectId: corrected.projectId,
+      context: corrected.context,
+      scheduledDate: corrected.scheduledDate || corrected.dueDate || nextState.ui.selectedDate,
+      dueDate: corrected.dueDate || corrected.scheduledDate || nextState.ui.selectedDate,
+      scheduledPeriod: corrected.scheduledPeriod || "afternoon",
+      estimatedMinutes: corrected.estimatedMinutes,
+      priority: corrected.priority,
+      urgency: corrected.urgency,
+      subtasks: corrected.checklist,
+      notes: notesWithTranscript,
+    });
+    return { nextState, message: "Agendamento criado a partir da voz." };
+  }
+
+  if (corrected.intent === "delegate") {
+    addDelegatedVoiceTask(nextState, {
+      title: corrected.title,
+      areaId: corrected.areaId,
+      projectId: corrected.projectId,
+      context: corrected.context,
+      dueDate: corrected.dueDate || corrected.scheduledDate || "",
+      estimatedMinutes: corrected.estimatedMinutes,
+      priority: corrected.priority,
+      urgency: corrected.urgency,
+      subtasks: corrected.checklist,
+      notes: notesWithTranscript,
+      delegable: true,
+    });
+    return { nextState, message: "Tarefa marcada para delegacao a partir da voz." };
+  }
+
+  const destination = corrected.destination === "project" ? "project" : "inbox";
+  const savedState = addInboxTask(nextState, {
+    title: corrected.title,
+    areaId: corrected.areaId,
+    projectId: corrected.projectId,
+    dueDate: corrected.dueDate || corrected.scheduledDate || "",
+    estimatedMinutes: corrected.estimatedMinutes,
+    context: corrected.context,
+    checklist: corrected.checklist,
+    notes: notesWithTranscript,
+    priority: corrected.priority,
+    urgency: corrected.urgency,
+    source: "voice",
+  });
+  return {
+    nextState: savedState,
+    message: destination === "project"
+      ? "Captura por voz enviada para o fluxo do projeto."
+      : "Captura por voz enviada para a Inbox.",
+  };
 }
 
 export function applyTaskAction(state, taskId, action, _meta = {}, referenceDate = formatISODate(new Date())) {
@@ -1673,6 +3147,7 @@ export function applyTaskAction(state, taskId, action, _meta = {}, referenceDate
   if (action === "complete") {
     task.status = "done";
     task.location = "done";
+    task.finalBucket = "do-now";
     task.completedAt = nowIso();
     task.manualDecision = false;
   }
@@ -1682,6 +3157,7 @@ export function applyTaskAction(state, taskId, action, _meta = {}, referenceDate
     task.location = "scheduled";
     task.scheduledDate = referenceDate;
     task.scheduledPeriod = guessPeriod(task);
+    task.finalBucket = "do-now";
     task.manualDecision = false;
     task.riskAccepted = false;
   }
@@ -1689,6 +3165,7 @@ export function applyTaskAction(state, taskId, action, _meta = {}, referenceDate
   if (action === "backlog") {
     task.status = "backlog";
     task.location = "backlog";
+    task.finalBucket = "backlog";
     task.scheduledDate = "";
     task.manualDecision = false;
   }
@@ -1696,6 +3173,7 @@ export function applyTaskAction(state, taskId, action, _meta = {}, referenceDate
   if (action === "inbox") {
     task.status = "inbox";
     task.location = "inbox";
+    task.finalBucket = "";
     task.scheduledDate = "";
     task.manualDecision = false;
   }
@@ -1703,18 +3181,21 @@ export function applyTaskAction(state, taskId, action, _meta = {}, referenceDate
   if (action === "delegate") {
     task.status = "delegated";
     task.location = "delegated";
+    task.finalBucket = "delegate";
     task.manualDecision = false;
   }
 
   if (action === "waiting") {
     task.status = "waiting";
     task.location = "waiting";
+    task.finalBucket = "waiting";
     task.manualDecision = false;
   }
 
   if (action === "discard") {
     task.status = "discarded";
     task.location = "discarded";
+    task.finalBucket = "backlog";
     task.manualDecision = false;
   }
 
@@ -1724,16 +3205,19 @@ export function applyTaskAction(state, taskId, action, _meta = {}, referenceDate
     task.scheduledDate = slot.date;
     task.scheduledPeriod = slot.period;
     task.location = "scheduled";
+    task.finalBucket = "schedule";
     task.manualDecision = false;
   }
 
   if (action === "keep-original") {
     task.location = "scheduled";
+    task.finalBucket = "priority";
     task.manualDecision = false;
   }
 
   if (action === "accept-risk") {
     task.location = "scheduled";
+    task.finalBucket = "priority";
     task.manualDecision = false;
     task.riskAccepted = true;
   }
@@ -1752,9 +3236,10 @@ export function applyTaskAction(state, taskId, action, _meta = {}, referenceDate
 
   if (action === "reprocess") {
     task.gtdStage = "clarify";
-    task.gtdDecision = "Executar";
+    task.gtdDecision = "";
     task.nextAction = "";
-    task.finalBucket = "priority";
+    task.finalBucket = "";
+    task.priorityMode = "auto";
     task.scoreAdjustment = 0;
     task.manualDecision = false;
   }
@@ -1763,6 +3248,7 @@ export function applyTaskAction(state, taskId, action, _meta = {}, referenceDate
     task.isTemplate = true;
     task.status = "template";
     task.location = "template";
+    task.finalBucket = "backlog";
     task.scheduledDate = "";
     task.dueDate = "";
   }
@@ -1839,6 +3325,41 @@ export function saveEntity(state, kind, payload) {
     setRoutineItem(nextState, normalizeRoutinePayload(payload, existing));
   }
 
+  if (kind === "health-weight") {
+    const existing = nextState.health.weightLogs.find((entry) => entry.id === payload.id) || null;
+    const entry = normalizeHealthWeightPayload(payload, existing);
+    nextState.health.weightLogs = nextState.health.weightLogs.filter((item) => item.id !== entry.id);
+    nextState.health.weightLogs.unshift(entry);
+  }
+
+  if (kind === "health-measure") {
+    const existing = nextState.health.measureLogs.find((entry) => entry.id === payload.id) || null;
+    const entry = normalizeHealthMeasurePayload(payload, existing);
+    nextState.health.measureLogs = nextState.health.measureLogs.filter((item) => item.id !== entry.id);
+    nextState.health.measureLogs.unshift(entry);
+  }
+
+  if (kind === "health-care") {
+    const existing = nextState.health.careItems.find((entry) => entry.id === payload.id) || null;
+    const entry = normalizeHealthCarePayload(payload, existing);
+    nextState.health.careItems = nextState.health.careItems.filter((item) => item.id !== entry.id);
+    nextState.health.careItems.push(entry);
+  }
+
+  if (kind === "health-workout") {
+    const existing = nextState.health.workouts.find((entry) => entry.id === payload.id) || null;
+    const entry = normalizeHealthWorkoutPayload(payload, existing);
+    nextState.health.workouts = nextState.health.workouts.filter((item) => item.id !== entry.id);
+    nextState.health.workouts.unshift(entry);
+  }
+
+  if (kind === "diet-meal") {
+    const existing = nextState.health.dietMeals.find((entry) => entry.id === payload.id) || null;
+    const entry = normalizeDietMealPayload(payload, existing);
+    nextState.health.dietMeals = nextState.health.dietMeals.filter((item) => item.id !== entry.id);
+    nextState.health.dietMeals.push(entry);
+  }
+
   if (kind === "day-override") {
     const existing = nextState.dayOverrides.find((entry) => entry.id === payload.id) || null;
     const override = normalizeDayOverridePayload(nextState, payload, existing);
@@ -1859,6 +3380,11 @@ export function deleteEntity(state, kind, id) {
   if (kind === "objective") nextState.objectives = nextState.objectives.filter((entry) => entry.id !== id);
   if (kind === "habit") nextState.habits = nextState.habits.filter((entry) => entry.id !== id);
   if (kind === "block") nextState.blocks = nextState.blocks.filter((entry) => entry.id !== id);
+  if (kind === "health-weight") nextState.health.weightLogs = nextState.health.weightLogs.filter((entry) => entry.id !== id);
+  if (kind === "health-measure") nextState.health.measureLogs = nextState.health.measureLogs.filter((entry) => entry.id !== id);
+  if (kind === "health-care") nextState.health.careItems = nextState.health.careItems.filter((entry) => entry.id !== id);
+  if (kind === "health-workout") nextState.health.workouts = nextState.health.workouts.filter((entry) => entry.id !== id);
+  if (kind === "diet-meal") nextState.health.dietMeals = nextState.health.dietMeals.filter((entry) => entry.id !== id);
   if (kind === "routine") removeRoutineItem(nextState, id);
   if (kind === "day-override") nextState.dayOverrides = nextState.dayOverrides.filter((entry) => entry.id !== id);
   nextState.ui.editor = { kind: "", id: "" };
@@ -1875,6 +3401,18 @@ export function duplicateEntity(state, kind, id) {
   if (kind === "block") {
     const existing = nextState.blocks.find((entry) => entry.id === id);
     if (existing) nextState.blocks.push(normalizeBlockPayload({ ...existing, id: "", title: `${existing.title} (copia)` }, null));
+  }
+  if (kind === "health-care") {
+    const existing = nextState.health.careItems.find((entry) => entry.id === id);
+    if (existing) nextState.health.careItems.push(normalizeHealthCarePayload({ ...existing, id: "", title: `${existing.title} (copia)` }, null));
+  }
+  if (kind === "health-workout") {
+    const existing = nextState.health.workouts.find((entry) => entry.id === id);
+    if (existing) nextState.health.workouts.unshift(normalizeHealthWorkoutPayload({ ...existing, id: "", title: `${existing.title} (copia)` }, null));
+  }
+  if (kind === "diet-meal") {
+    const existing = nextState.health.dietMeals.find((entry) => entry.id === id);
+    if (existing) nextState.health.dietMeals.push(normalizeDietMealPayload({ ...existing, id: "", title: `${existing.title} (copia)` }, null));
   }
   if (kind === "routine") {
     const existing = [...(nextState.routines.morning || []), ...(nextState.routines.night || [])].find((entry) => entry.id === id);
@@ -1954,6 +3492,12 @@ export function saveSettings(state, payload) {
     futureFocus: toNumber(payload.futureFocus, nextState.settings.prioritization.futureFocus),
     delegationBias: toNumber(payload.delegationBias, nextState.settings.prioritization.delegationBias),
     overloadLimit: toNumber(payload.overloadLimit, nextState.settings.prioritization.overloadLimit),
+  };
+  nextState.settings.voiceAssistant = {
+    ...nextState.settings.voiceAssistant,
+    projectAliases: parseVoiceAliasLines(payload.voiceProjectAliases, nextState.settings.voiceAssistant.projectAliases),
+    areaAliases: parseVoiceAliasLines(payload.voiceAreaAliases, nextState.settings.voiceAssistant.areaAliases),
+    frequentAssociations: parseVoiceAssociationLines(payload.voiceAssociations, nextState.settings.voiceAssistant.frequentAssociations),
   };
   pushHistory(nextState, "settings", "Configuracoes atualizadas.");
   return nextState;

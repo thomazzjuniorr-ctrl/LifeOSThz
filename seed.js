@@ -1,4 +1,4 @@
-import {
+﻿import {
   addDays,
   formatISODate,
   getQuarterLabel,
@@ -33,6 +33,7 @@ function task(overrides) {
     gtdStage: overrides.gtdStage || "clarify",
     gtdDecision: overrides.gtdDecision || "Executar",
     finalBucket: overrides.finalBucket || "priority",
+    priorityMode: overrides.priorityMode || "auto",
     frog: overrides.frog || "",
     scoreAdjustment: Number(overrides.scoreAdjustment || 0),
     notes: overrides.notes || "",
@@ -94,6 +95,61 @@ function habit(overrides) {
 
 function log(date, done) {
   return { date, done };
+}
+
+function weightEntry(overrides) {
+  return {
+    id: overrides.id,
+    date: overrides.date,
+    weight: Number(overrides.weight || 0),
+    note: overrides.note || "",
+  };
+}
+
+function measureEntry(overrides) {
+  return {
+    id: overrides.id,
+    date: overrides.date,
+    waist: Number(overrides.waist || 0),
+    chest: Number(overrides.chest || 0),
+    hip: Number(overrides.hip || 0),
+    arm: Number(overrides.arm || 0),
+    thigh: Number(overrides.thigh || 0),
+    note: overrides.note || "",
+  };
+}
+
+function careItem(overrides) {
+  return {
+    id: overrides.id,
+    title: overrides.title,
+    note: overrides.note || "",
+    logs: overrides.logs || [],
+  };
+}
+
+function workoutEntry(overrides) {
+  return {
+    id: overrides.id,
+    date: overrides.date,
+    title: overrides.title,
+    type: overrides.type || "casa",
+    duration: Number(overrides.duration || 30),
+    status: overrides.status || "planned",
+    note: overrides.note || "",
+  };
+}
+
+function dietMeal(overrides) {
+  return {
+    id: overrides.id,
+    mealKey: overrides.mealKey,
+    title: overrides.title,
+    plan: overrides.plan || "",
+    checklist: overrides.checklist || [],
+    note: overrides.note || "",
+    logs: overrides.logs || [],
+  };
 }
 
 function weekBlocks(weekDates) {
@@ -197,7 +253,7 @@ function weekBlocks(weekDates) {
   return blocks;
 }
 
-const REASONING_BASE = `Clareza antes de executar. Prioridade baseada em impacto real, impacto financeiro, crescimento dos projetos e consequencias de nao fazer. Filhos, casa, saude, alimentacao e treino sao base do sistema e nao devem ser sacrificados sempre pelo trabalho. Trabalho precisa gerar resultado, nao apenas ocupacao. O sistema deve evitar sobrecarga artificial, respeitar manha, tarde, noite, futebol, sabado, viagem e dias de baixa capacidade. Tarefas grandes devem ser quebradas em proximas acoes simples. Delegar e estrategico. Backlog nao e deposito infinito. Prioridade precisa olhar futuro, renda, mudanca e estabilidade. A execucao precisa continuar simples: Fazer agora, Prioridade, Agendar, Delegar, Aguardar e Backlog. Alertas criticos precisam reaparecer em dias de baixa capacidade. O sistema sugere, mas o controle final e meu.`;
+const REASONING_BASE = `Quero que o sistema pense pela minha vida real, nao por um modelo generico de produtividade. Clareza vem antes da execucao: nenhuma tarefa entra no dia sem proxima acao clara. Quando uma tarefa tiver checklist, esse checklist deve virar base de entendimento, proximas acoes e refinamento automatico. A interpretacao por voz deve entender intencao antes de sugerir destino, sem criar um fluxo paralelo ao restante do sistema. Prioridade deve considerar impacto real na vida, impacto financeiro, consequencia de nao fazer, crescimento dos projetos, estabilidade futura e protecao da mudanca. Saude, rotina, filhos, familia, casa, alimentacao e treino sao base estrutural e nao devem ser sacrificados sempre pelo trabalho. Trabalho deve gerar resultado, previsibilidade e avancos reais, nao so ocupacao. O sistema deve evitar sobrecarga artificial, preferindo poucas tarefas bem executadas. Deve respeitar a rotina real: manha operacional e familiar, tarde de trabalho profundo, noite complementar, quarta e sexta com futebol, sabado para conteudo e projetos, domingo leve e dias de viagem com capacidade reduzida. Tarefas grandes devem ser quebradas em proximas acoes menores. Delegar e estrategico quando fizer sentido. Backlog nao e deposito infinito e precisa de limpeza constante. Habitos, saude, dieta e rotina precisam aparecer como execucao diaria, nao so como historico. A frente do sistema deve continuar simples: Fazer agora, Prioridade, Agendar, Delegar, Aguardar e Backlog. Alertas criticos precisam ficar visiveis e persistentes em dias de baixa capacidade. O sistema sugere automaticamente com base nessa logica, mas eu continuo com a decisao final.`;
 
 export function buildSeedState(baseDate = new Date()) {
   const today = formatISODate(baseDate);
@@ -279,6 +335,33 @@ export function buildSeedState(baseDate = new Date()) {
     habit({ id: "habit-food", title: "Almoco com proteina e legumes", targetPerWeek: 5, preferredWeekdays: ["segunda", "terca", "quarta", "quinta", "sexta"], logs: [log(minus1, true), log(today, false)] }),
   ];
 
+  const health = {
+    weightLogs: [
+      weightEntry({ id: "weight-1", date: minus2, weight: 97.4, note: "Inicio de acompanhamento" }),
+      weightEntry({ id: "weight-2", date: minus1, weight: 97.1, note: "Dia bom de rotina" }),
+      weightEntry({ id: "weight-3", date: today, weight: 96.8, note: "Peso da manha" }),
+    ],
+    measureLogs: [
+      measureEntry({ id: "measure-1", date: minus2, waist: 104, chest: 111, hip: 103, arm: 36, thigh: 62, note: "Base inicial" }),
+      measureEntry({ id: "measure-2", date: today, waist: 103, chest: 111, hip: 102.5, arm: 36, thigh: 62, note: "Revisao da semana" }),
+    ],
+    careItems: [
+      careItem({ id: "care-water", title: "Beber agua", note: "Meta 2,5L", logs: [log(minus1, true), log(today, true)] }),
+      careItem({ id: "care-supplement", title: "Tomar suplemento", note: "Pela manha", logs: [log(minus1, true), log(today, false)] }),
+      careItem({ id: "care-stretch", title: "Alongamento rapido", note: "5 a 10 min", logs: [log(minus1, false), log(today, false)] }),
+    ],
+    workouts: [
+      workoutEntry({ id: "workout-1", date: minus2, title: "Treino A em casa", type: "casa", duration: 38, status: "done", note: "Bom ritmo" }),
+      workoutEntry({ id: "workout-2", date: tuesday, title: "Treino B em casa", type: "casa", duration: 40, status: "planned", note: "Preferencial antes da noite" }),
+    ],
+    dietMeals: [
+      dietMeal({ id: "diet-breakfast", mealKey: "breakfast", title: "Cafe da manha", plan: "Proteina + fruta + cafe", checklist: ["proteina", "fruta"], logs: [log(today, true)] }),
+      dietMeal({ id: "diet-lunch", mealKey: "lunch", title: "Almoco", plan: "Proteina + legumes + arroz", checklist: ["proteina", "legumes"], logs: [log(today, false)] }),
+      dietMeal({ id: "diet-dinner", mealKey: "dinner", title: "Janta", plan: "Refeicao leve e organizada", checklist: ["evitar excesso", "fechar cedo"], logs: [log(today, false)] }),
+      dietMeal({ id: "diet-snack", mealKey: "snack", title: "Lanches", plan: "Fruta ou iogurte", checklist: ["evitar impulso"], logs: [log(today, false)] }),
+    ],
+  };
+
   const tasks = [
     task({ id: "task-review-week", title: "Fechar revisao semanal e foco principal", subtasks: ["listar o que concluiu", "mover atrasos", "escolher foco da semana"], areaId: "area-routine", objectiveId: "objective-routine", sprintId: "sprint-q2-2026", type: "review", context: "planning", scheduledDate: today, scheduledPeriod: "night", dueDate: today, estimatedMinutes: 45, priority: "high", impact: 5, urgency: 4, effort: 2, nextAction: "abrir a semana e decidir o que entra e o que sai", gtdStage: "execute", gtdDecision: "Executar", finalBucket: "do-now", critical: true, isRecurring: true }),
     task({ id: "task-move-costs", title: "Fechar mapa de custos da mudanca", subtasks: ["levantamento de aluguel", "somar frete e internet", "definir reserva minima"], areaId: "area-move", objectiveId: "objective-move", sprintId: "sprint-q2-2026", type: "strategic", context: "deep-work", scheduledDate: today, scheduledPeriod: "afternoon", dueDate: plus2, estimatedMinutes: 90, priority: "high", impact: 5, urgency: 4, effort: 4, nextAction: "abrir a planilha e fechar a primeira versao dos custos", gtdStage: "execute", gtdDecision: "Executar", finalBucket: "priority" }),
@@ -310,7 +393,7 @@ export function buildSeedState(baseDate = new Date()) {
   ];
 
   return {
-    meta: { appName: "Life OS Thz 2026", version: 4, seededAt: new Date().toISOString() },
+    meta: { appName: "Life OS Thz 2026", version: 5, seededAt: new Date().toISOString() },
     profile: {
       ownerName: "Thz",
       moveDeadline: "2026-11-01",
@@ -329,7 +412,7 @@ export function buildSeedState(baseDate = new Date()) {
     settings: {
       editMode: false,
       visualDensity: "calm",
-      accentTone: "sand",
+      accentTone: "forest",
       layoutDefaults: {
         dashboard: [
           { id: "overview", width: "full", height: "compact", frame: null },
@@ -342,7 +425,7 @@ export function buildSeedState(baseDate = new Date()) {
         today: [
           { id: "focus", width: "full", height: "regular", frame: null },
           { id: "queue", width: "medium", height: "regular", frame: null },
-          { id: "calendar", width: "medium", height: "regular", frame: null },
+          { id: "checklist", width: "medium", height: "regular", frame: null },
           { id: "alerts", width: "full", height: "regular", frame: null },
         ],
       },
@@ -358,7 +441,7 @@ export function buildSeedState(baseDate = new Date()) {
         today: [
           { id: "focus", width: "full", height: "regular", frame: null },
           { id: "queue", width: "medium", height: "regular", frame: null },
-          { id: "calendar", width: "medium", height: "regular", frame: null },
+          { id: "checklist", width: "medium", height: "regular", frame: null },
           { id: "alerts", width: "full", height: "regular", frame: null },
         ],
       },
@@ -366,6 +449,28 @@ export function buildSeedState(baseDate = new Date()) {
       layoutCapabilities: { resizeEnabled: true, dragEnabled: true, futureFreeformReady: true },
       prioritization: { healthProtection: 1.1, moveProtection: 1.18, familyProtection: 1.08, futureFocus: 1.12, delegationBias: 1.05, overloadLimit: 0.92 },
       reasoningLine: REASONING_BASE,
+      voiceAssistant: {
+        projectAliases: [
+          { term: "assessoria", value: "project-assessoria" },
+          { term: "financeira", value: "project-financeira" },
+          { term: "movimento", value: "project-conteudo" },
+          { term: "conteudo", value: "project-conteudo" },
+        ],
+        areaAliases: [
+          { term: "cliente", value: "area-work" },
+          { term: "filhos", value: "area-family" },
+          { term: "casa", value: "area-home" },
+          { term: "saude", value: "area-health" },
+        ],
+        frequentAssociations: [
+          { term: "gravar", target: { projectId: "project-conteudo", areaId: "area-work", context: "creative", intent: "create-task", destination: "project" } },
+          { term: "cliente", target: { areaId: "area-work", context: "admin", intent: "create-task", destination: "inbox" } },
+          { term: "peso", target: { areaId: "area-health", context: "health", intent: "register-weight", destination: "health" } },
+          { term: "cintura", target: { areaId: "area-health", context: "health", intent: "register-measure", destination: "health" } },
+        ],
+        learnedPatterns: [],
+        history: [],
+      },
       googleCalendar: { clientId: "", apiKey: "", calendarId: "primary" },
       architecture: { workModuleMode: "embedded", futureApiReady: true },
     },
@@ -375,6 +480,7 @@ export function buildSeedState(baseDate = new Date()) {
     sprints,
     routines,
     habits,
+    health,
     tasks,
     blocks: weekBlocks(weekDates),
     dayTypes,

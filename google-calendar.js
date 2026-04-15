@@ -1,4 +1,4 @@
-import { getRuntimeConfig } from "./runtime-config-service.js";
+﻿import { getRuntimeConfig } from "./runtime-config-service.js";
 
 const DISCOVERY_DOC =
   "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest";
@@ -19,7 +19,7 @@ function loadScript(src) {
     script.defer = true;
     script.onload = () => resolve();
     script.onerror = () =>
-      reject(new Error(`Não foi possível carregar o script ${src}.`));
+      reject(new Error(`NÃ£o foi possÃ­vel carregar o script ${src}.`));
     document.head.appendChild(script);
   });
 }
@@ -59,7 +59,7 @@ export class GoogleCalendarService {
 
     if (!window.gapi || !window.google) {
       throw new Error(
-        "Bibliotecas do Google não carregaram. Use o app em um servidor local.",
+        "Bibliotecas do Google nÃ£o carregaram. Use o app em um servidor local.",
       );
     }
 

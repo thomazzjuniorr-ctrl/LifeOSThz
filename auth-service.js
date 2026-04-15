@@ -1,4 +1,4 @@
-import { getRuntimeConfig } from "./runtime-config-service.js";
+﻿import { getRuntimeConfig } from "./runtime-config-service.js";
 
 const AUTH_SESSION_KEY = "life-os-thz-2026-auth-session";
 
