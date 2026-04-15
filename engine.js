@@ -276,6 +276,21 @@ function parseSubtasks(value, existing = []) {
   return existing || [];
 }
 
+function normalizeCompletedSubtasks(value, subtasks = [], existing = []) {
+  const source = Array.isArray(value)
+    ? value
+    : Array.isArray(existing)
+      ? existing
+      : typeof value === "string"
+        ? value.split(",")
+        : [];
+
+  return source
+    .map((item) => Number(item))
+    .filter((item, index, items) => Number.isInteger(item) && item >= 0 && item < subtasks.length && items.indexOf(item) === index)
+    .sort((left, right) => left - right);
+}
+
 function parseLines(value, existing = []) {
   if (Array.isArray(value)) {
     return value.filter(Boolean).map((item) => String(item).trim()).filter(Boolean);
@@ -1055,6 +1070,7 @@ function prepareState(state) {
     activeSection: state.ui?.activeSection || "today",
     selectedDate: state.ui?.selectedDate || formatISODate(new Date()),
     priorityMethod: state.ui?.priorityMethod || "pipeline",
+    checklistView: state.ui?.checklistView || "all",
     filters: { ...DEFAULT_FILTERS, ...(state.ui?.filters || {}) },
     editor: {
       kind: state.ui?.editor?.kind || "",
@@ -1607,6 +1623,18 @@ function sortByScore(left, right) {
   return right.score - left.score || left.estimatedMinutes - right.estimatedMinutes;
 }
 
+function sortByChecklistOrder(left, right) {
+  const leftRank = toNumber(left.checklistOrder, 0);
+  const rightRank = toNumber(right.checklistOrder, 0);
+  if (leftRank !== rightRank) {
+    return rightRank - leftRank;
+  }
+
+  const leftDate = left.scheduledDate || left.dueDate || "9999-12-31";
+  const rightDate = right.scheduledDate || right.dueDate || "9999-12-31";
+  return leftDate.localeCompare(rightDate) || sortByScore(left, right);
+}
+
 function applyFrogs(tasks, selectedDate) {
   const next = tasks.map((task) => ({ ...task, frogDay: false, frogWeek: false }));
   const dayCandidates = next
@@ -1820,27 +1848,35 @@ function buildHabitWeekMatrix(habit, weekDates, selectedDate) {
   });
 }
 
-function buildTodayChecklistModel(state, tasks, selectedDate, weekData) {
-  const routines = [
+function buildRoutineChecklistItems(state, selectedDate) {
+  return [
     ...(state.routines.morning || []).map((item) => ({
       id: item.id,
       kind: "routine",
       title: item.title,
       period: "Manha",
-      done: false,
+      done: Boolean((item.logs || []).find((entry) => entry.date === selectedDate)?.done),
       note: item.note || "",
+      areaName: "Rotina",
+      sectionLabel: "Rotina da manha",
+      scheduledDate: selectedDate,
     })),
     ...(state.routines.night || []).map((item) => ({
       id: item.id,
       kind: "routine",
       title: item.title,
       period: "Noite",
-      done: false,
+      done: Boolean((item.logs || []).find((entry) => entry.date === selectedDate)?.done),
       note: item.note || "",
+      areaName: "Rotina",
+      sectionLabel: "Rotina da noite",
+      scheduledDate: selectedDate,
     })),
   ];
+}
 
-  const habits = state.habits.map((habit) => {
+function buildHabitChecklistItems(state, selectedDate) {
+  return state.habits.map((habit) => {
     const log = (habit.logs || []).find((entry) => entry.date === selectedDate);
     return {
       id: habit.id,
@@ -1849,10 +1885,15 @@ function buildTodayChecklistModel(state, tasks, selectedDate, weekData) {
       period: "Habito",
       done: Boolean(log?.done),
       note: habit.note || "",
+      areaName: habit.areaId === "area-health" ? "Saude" : "Rotina",
+      sectionLabel: "Habitos",
+      scheduledDate: selectedDate,
     };
   });
+}
 
-  const care = state.health.careItems.map((item) => {
+function buildCareChecklistItems(state, selectedDate) {
+  return state.health.careItems.map((item) => {
     const log = (item.logs || []).find((entry) => entry.date === selectedDate);
     return {
       id: item.id,
@@ -1861,10 +1902,15 @@ function buildTodayChecklistModel(state, tasks, selectedDate, weekData) {
       period: "Saude",
       done: Boolean(log?.done),
       note: item.note || "",
+      areaName: "Saude",
+      sectionLabel: "Checklist de cuidados",
+      scheduledDate: selectedDate,
     };
   });
+}
 
-  const meals = state.health.dietMeals.map((meal) => {
+function buildDietChecklistItems(state, selectedDate) {
+  return state.health.dietMeals.map((meal) => {
     const log = (meal.logs || []).find((entry) => entry.date === selectedDate);
     return {
       id: meal.id,
@@ -1873,11 +1919,199 @@ function buildTodayChecklistModel(state, tasks, selectedDate, weekData) {
       period: "Dieta",
       done: Boolean(log?.done),
       note: meal.plan || meal.note || "",
+      areaName: "Saude",
+      sectionLabel: "Dieta do dia",
+      scheduledDate: selectedDate,
+      checklist: meal.checklist || [],
     };
   });
+}
+
+function buildChecklistSpecialEntries(state, selectedDate) {
+  const routines = buildRoutineChecklistItems(state, selectedDate);
+  const habits = buildHabitChecklistItems(state, selectedDate);
+  const care = buildCareChecklistItems(state, selectedDate);
+  const diet = buildDietChecklistItems(state, selectedDate);
+
+  return {
+    routines,
+    habits,
+    care,
+    diet,
+    daily: [...routines, ...habits, ...care, ...diet],
+  };
+}
+
+function makeChecklistGroup(id, label, entries, emptyMessage = "") {
+  return {
+    id,
+    label,
+    entries,
+    count: entries.length,
+    emptyMessage,
+  };
+}
+
+function buildTaskTimeGroups(tasks, selectedDate) {
+  const nextWeekLimit = formatISODate(addDays(selectedDate, 7));
+  const overdue = [];
+  const today = [];
+  const nextDays = [];
+  const later = [];
+  const noDate = [];
+
+  tasks.forEach((task) => {
+    const anchorDate = task.scheduledDate || task.dueDate || "";
+    const isOverdue = (task.dueDate && task.dueDate < selectedDate) || (task.scheduledDate && task.scheduledDate < selectedDate);
+
+    if (isOverdue) {
+      overdue.push(task);
+      return;
+    }
+
+    if (!anchorDate) {
+      noDate.push(task);
+      return;
+    }
+
+    if (anchorDate === selectedDate) {
+      today.push(task);
+      return;
+    }
+
+    if (anchorDate <= nextWeekLimit) {
+      nextDays.push(task);
+      return;
+    }
+
+    later.push(task);
+  });
+
+  return [
+    makeChecklistGroup("overdue", "Em atraso", overdue.sort(sortByChecklistOrder), "Sem atrasos por aqui."),
+    makeChecklistGroup("today", "Hoje", today.sort(sortByChecklistOrder), "Nada previsto para hoje."),
+    makeChecklistGroup("next", "Proximos 7 dias", nextDays.sort(sortByChecklistOrder), "Nada entrando nos proximos dias."),
+    makeChecklistGroup("later", "Mais tarde", later.sort(sortByChecklistOrder), "Sem tarefas para mais tarde."),
+    makeChecklistGroup("no-date", "Sem data", noDate.sort(sortByChecklistOrder), "Nada sem data."),
+  ].filter((group) => group.entries.length);
+}
+
+function buildChecklistDateGroups(tasks, selectedDate) {
+  const nextWeekLimit = formatISODate(addDays(selectedDate, 7));
+  const grouped = new Map();
+
+  tasks
+    .filter((task) => {
+      const anchorDate = task.scheduledDate || task.dueDate || "";
+      return anchorDate && anchorDate >= selectedDate && anchorDate <= nextWeekLimit;
+    })
+    .sort(sortByChecklistOrder)
+    .forEach((task) => {
+      const key = task.scheduledDate || task.dueDate;
+      if (!grouped.has(key)) {
+        grouped.set(key, []);
+      }
+      grouped.get(key).push(task);
+    });
+
+  return [...grouped.entries()].map(([date, entries]) => makeChecklistGroup(date, formatLongDate(date), entries));
+}
+
+function buildChecklistModel(state, openTasks, completedTasks, selectedDate, weekData) {
+  const checklistView = state.ui.checklistView || "all";
+  const special = buildChecklistSpecialEntries(state, selectedDate);
+  const workTasks = openTasks.filter((task) => task.area?.type === "work");
+  const projectTasks = openTasks.filter((task) => task.projectId);
+  const healthTasks = openTasks.filter((task) => task.areaId === "area-health");
+  const routineTasks = openTasks.filter((task) => task.areaId === "area-routine");
+  const overdueTasks = openTasks.filter((task) => task.isOverdue);
+  const todayTasks = openTasks.filter((task) => task.scheduledDate === selectedDate).sort(sortByChecklistOrder);
+  const nextWeekTasks = openTasks.filter((task) => {
+    const anchorDate = task.scheduledDate || task.dueDate || "";
+    return anchorDate && anchorDate >= selectedDate && anchorDate <= formatISODate(addDays(selectedDate, 7));
+  });
+  const undatedTasks = openTasks.filter((task) => !task.scheduledDate && !task.dueDate);
+  const completedToday = completedTasks.filter((task) => String(task.completedAt || "").slice(0, 10) === selectedDate);
+  const completedBefore = completedTasks.filter((task) => String(task.completedAt || "").slice(0, 10) !== selectedDate);
+
+  let groups = [];
+
+  if (checklistView === "today") {
+    groups = [
+      makeChecklistGroup("overdue", "Em atraso", overdueTasks.sort(sortByChecklistOrder), "Sem atrasos relevantes."),
+      makeChecklistGroup("today", "Hoje", todayTasks, "Nada marcado para hoje."),
+      makeChecklistGroup("daily", "Checklist do dia", special.daily, "Sem checklist operacional hoje."),
+    ].filter((group) => group.entries.length);
+  } else if (checklistView === "next-7") {
+    groups = buildChecklistDateGroups(openTasks, selectedDate);
+  } else if (checklistView === "no-date") {
+    groups = [makeChecklistGroup("no-date", "Sem data", undatedTasks.sort(sortByChecklistOrder), "Nenhuma tarefa sem data.")];
+  } else if (checklistView === "completed") {
+    groups = [
+      makeChecklistGroup("done-today", "Concluidas hoje", completedToday.sort(sortByChecklistOrder), "Nada concluido hoje."),
+      makeChecklistGroup("done-earlier", "Concluidas antes", completedBefore.sort(sortByChecklistOrder), "Sem historico anterior por enquanto."),
+    ].filter((group) => group.entries.length);
+  } else if (checklistView === "health") {
+    groups = [
+      makeChecklistGroup("health-tasks", "Tarefas de saude", healthTasks.sort(sortByChecklistOrder), "Sem tarefas abertas de saude."),
+      makeChecklistGroup("care", "Checklist de cuidados", special.care, "Sem cuidados cadastrados."),
+      makeChecklistGroup("diet", "Dieta do dia", special.diet, "Sem refeicoes cadastradas."),
+      makeChecklistGroup("habits", "Habitos de saude", special.habits.filter((item) => item.areaName === "Saude"), "Sem habitos de saude."),
+    ].filter((group) => group.entries.length);
+  } else if (checklistView === "routine") {
+    groups = [
+      makeChecklistGroup("routine-morning", "Rotina da manha", special.routines.filter((item) => item.period === "Manha"), "Sem itens de manha."),
+      makeChecklistGroup("routine-night", "Rotina da noite", special.routines.filter((item) => item.period === "Noite"), "Sem itens de noite."),
+      makeChecklistGroup("routine-habits", "Habitos", special.habits, "Sem habitos cadastrados."),
+      makeChecklistGroup("routine-tasks", "Tarefas da rotina", routineTasks.sort(sortByChecklistOrder), "Sem tarefas abertas da rotina."),
+    ].filter((group) => group.entries.length);
+  } else if (checklistView === "work") {
+    groups = buildTaskTimeGroups(workTasks, selectedDate);
+  } else if (checklistView === "projects") {
+    groups = state.projects
+      .map((project) => makeChecklistGroup(project.id, project.name, projectTasks.filter((task) => task.projectId === project.id).sort(sortByChecklistOrder), `Sem tarefas em ${project.name}.`))
+      .filter((group) => group.entries.length);
+  } else {
+    groups = buildTaskTimeGroups(openTasks, selectedDate);
+  }
+
+  const quickDefaults = {
+    areaId: checklistView === "health"
+      ? "area-health"
+      : checklistView === "routine"
+        ? "area-routine"
+        : checklistView === "work" || checklistView === "projects"
+          ? "area-work"
+          : state.areas[0]?.id || "",
+    projectId: checklistView === "projects" ? state.projects[0]?.id || "" : "",
+  };
+
+  return {
+    activeView: checklistView,
+    views: [
+      { id: "all", label: "Todas", count: openTasks.length },
+      { id: "today", label: "Hoje", count: overdueTasks.length + todayTasks.length + special.daily.length },
+      { id: "next-7", label: "Proximos 7 dias", count: nextWeekTasks.length },
+      { id: "no-date", label: "Sem data", count: undatedTasks.length },
+      { id: "completed", label: "Concluidas", count: completedTasks.length },
+      { id: "health", label: "Saude", count: healthTasks.length + special.care.length + special.diet.length },
+      { id: "routine", label: "Rotina", count: special.routines.length + special.habits.length + routineTasks.length },
+      { id: "work", label: "Trabalho", count: workTasks.length },
+      { id: "projects", label: "Projetos", count: projectTasks.length },
+    ],
+    groups,
+    quickDefaults,
+    selectedDate,
+    weekDates: weekData.dates,
+  };
+}
+
+function buildTodayChecklistModel(state, tasks, selectedDate, weekData) {
+  const special = buildChecklistSpecialEntries(state, selectedDate);
 
   const quickTasks = tasks
     .filter((task) => task.scheduledDate === selectedDate)
+    .sort(sortByChecklistOrder)
     .slice(0, 6)
     .map((task) => ({
       id: task.id,
@@ -1886,10 +2120,14 @@ function buildTodayChecklistModel(state, tasks, selectedDate, weekData) {
       period: task.periodLabel,
       done: task.status === "done",
       note: task.nextAction || "",
+      areaName: task.areaName,
+      projectName: task.projectName,
+      subtasks: task.subtasks,
+      completedSubtasks: task.completedSubtasks,
     }));
 
   return {
-    items: [...quickTasks, ...routines, ...habits, ...care, ...meals],
+    items: [...quickTasks, ...special.daily],
     weekDates: weekData.dates,
   };
 }
@@ -2045,8 +2283,12 @@ function buildRoutineModel(state, tasks, selectedDate, weekData) {
   });
 
   return {
-    morning: [...(state.routines.morning || [])].sort((left, right) => left.order - right.order),
-    night: [...(state.routines.night || [])].sort((left, right) => left.order - right.order),
+    morning: [...(state.routines.morning || [])]
+      .sort((left, right) => left.order - right.order)
+      .map((item) => ({ ...item, doneToday: Boolean((item.logs || []).find((entry) => entry.date === selectedDate)?.done) })),
+    night: [...(state.routines.night || [])]
+      .sort((left, right) => left.order - right.order)
+      .map((item) => ({ ...item, doneToday: Boolean((item.logs || []).find((entry) => entry.date === selectedDate)?.done) })),
     habits: habitProgress,
     healthTasks: tasks.filter((task) => task.areaId === "area-health" && weekData.dates.includes(task.scheduledDate)).slice(0, 6),
     careItems: state.health.careItems.map((item) => ({
@@ -2236,11 +2478,15 @@ export function buildAppModel(inputState, referenceDate = new Date()) {
   const state = prepareState(cloneValue(inputState));
   const today = formatISODate(referenceDate);
   const selectedDate = state.ui.selectedDate || today;
-  const enrichedTasks = applyFrogs(
+  const openTasks = applyFrogs(
     state.tasks.filter(isOpenTask).map((task) => enrichTask(task, state, selectedDate)),
     selectedDate,
   );
-  const filteredTasks = enrichedTasks.filter((task) => matchesFilters(task, state.ui.filters));
+  const filteredTasks = openTasks.filter((task) => matchesFilters(task, state.ui.filters));
+  const completedTasks = state.tasks
+    .filter((task) => task.status === "done")
+    .map((task) => enrichTask(task, state, selectedDate))
+    .filter((task) => matchesFilters(task, state.ui.filters));
   const weekData = buildWeekData(state, filteredTasks, selectedDate);
   const selectedDay = weekData.days.find((day) => day.date === selectedDate) || buildDaySnapshot(state, filteredTasks, selectedDate);
   const dashboard = buildDashboardModel(state, filteredTasks, selectedDate, weekData);
@@ -2250,6 +2496,7 @@ export function buildAppModel(inputState, referenceDate = new Date()) {
   const settings = buildSettingsModel(state);
   const health = buildHealthModel(state, filteredTasks, selectedDate, weekData);
   const todayChecklist = buildTodayChecklistModel(state, filteredTasks, selectedDate, weekData);
+  const checklist = buildChecklistModel(state, filteredTasks, completedTasks, selectedDate, weekData);
   const agenda = buildAgendaModel(state, filteredTasks, weekData, selectedDate);
   const floatingAlert = selectedDay.tasks.find(
     (task) => task.critical && !task.riskAccepted && (task.manualDecision || selectedDay.lowCapacity || task.location === "alert"),
@@ -2276,6 +2523,7 @@ export function buildAppModel(inputState, referenceDate = new Date()) {
     planning: buildPlanningModel(state, filteredTasks),
     agenda,
     todayChecklist,
+    checklist,
     settings,
     editorView: buildEditorView(state),
     floatingAlert,
@@ -2308,11 +2556,13 @@ function normalizeTaskPayload(state, payload = {}, existing = null) {
   const isTemplate = toBoolean(payload.isTemplate, existing?.isTemplate || false);
   const location = payload.location || existing?.location || (isTemplate ? "template" : scheduledDate ? "scheduled" : "inbox");
   const status = payload.status || existing?.status || (location === "inbox" ? "inbox" : "todo");
+  const subtasks = parseSubtasks(payload.subtasks, existing?.subtasks || []);
 
   return {
     id: payload.id || existing?.id || makeId("task"),
     title: String(payload.title || existing?.title || "Nova tarefa").trim(),
-    subtasks: parseSubtasks(payload.subtasks, existing?.subtasks || []),
+    subtasks,
+    completedSubtasks: normalizeCompletedSubtasks(payload.completedSubtasks, subtasks, existing?.completedSubtasks || []),
     areaId,
     projectId,
     objectiveId: payload.objectiveId || existing?.objectiveId || "",
@@ -2349,6 +2599,7 @@ function normalizeTaskPayload(state, payload = {}, existing = null) {
     completedAt: existing?.completedAt || "",
     source: existing?.source || payload.source || "manual",
     lastAction: payload.lastAction || existing?.lastAction || "",
+    checklistOrder: toNumber(payload.checklistOrder, existing?.checklistOrder || 0),
   };
 }
 
@@ -2426,6 +2677,7 @@ function normalizeRoutinePayload(payload = {}, existing = null) {
     active: toBoolean(payload.active, existing?.active !== false),
     recurring: toBoolean(payload.recurring, existing?.recurring !== false),
     note: payload.note || existing?.note || "",
+    logs: existing?.logs || [],
   };
 }
 
@@ -2674,6 +2926,12 @@ export function setPriorityMethod(state, method) {
   return nextState;
 }
 
+export function setChecklistView(state, view) {
+  const nextState = cloneState(state);
+  nextState.ui.checklistView = view;
+  return nextState;
+}
+
 export function setWeeklyEnergy(state, level) {
   const nextState = cloneState(state);
   nextState.weeklyPlan.energyLevel = toNumber(level, 3);
@@ -2724,6 +2982,32 @@ export function toggleDietMealForDate(state, itemId, date) {
   return nextState;
 }
 
+export function toggleRoutineForDate(state, routineId, date) {
+  const nextState = cloneState(state);
+  const routine = [...(nextState.routines.morning || []), ...(nextState.routines.night || [])].find((entry) => entry.id === routineId);
+  if (!routine) return nextState;
+  routine.logs = toggleDateLog(routine.logs || [], date);
+  pushHistory(nextState, "routine-toggle", `Rotina atualizada: ${routine.title}`);
+  return nextState;
+}
+
+export function toggleTaskSubtask(state, taskId, subtaskIndex) {
+  const nextState = cloneState(state);
+  const task = getTaskById(nextState, taskId);
+  const parsedIndex = Number(subtaskIndex);
+  if (!task || !Number.isInteger(parsedIndex) || parsedIndex < 0 || parsedIndex >= (task.subtasks || []).length) {
+    return nextState;
+  }
+
+  const completed = new Set(task.completedSubtasks || []);
+  if (completed.has(parsedIndex)) completed.delete(parsedIndex);
+  else completed.add(parsedIndex);
+  task.completedSubtasks = [...completed].sort((left, right) => left - right);
+  task.updatedAt = nowIso();
+  pushHistory(nextState, "task-subtask-toggle", `Checklist da tarefa atualizado: ${task.title}`);
+  return nextState;
+}
+
 export function moveTaskToBucket(state, taskId, bucketId) {
   const nextState = cloneState(state);
   const task = getTaskById(nextState, taskId);
@@ -2745,6 +3029,25 @@ export function moveTaskToBucket(state, taskId, bucketId) {
         ? "backlog"
         : "todo";
   pushHistory(nextState, "organize-bucket", `Tarefa movida para ${bucketId}: ${task.title}`);
+  return nextState;
+}
+
+export function reorderChecklistTask(state, taskId, targetTaskId) {
+  const nextState = cloneState(state);
+  const ordered = nextState.tasks.filter((task) => isOpenTask(task) && !isTemplateTask(task));
+  const fromIndex = ordered.findIndex((task) => task.id === taskId);
+  const targetIndex = ordered.findIndex((task) => task.id === targetTaskId);
+  if (fromIndex === -1 || targetIndex === -1 || fromIndex === targetIndex) {
+    return nextState;
+  }
+
+  const [moved] = ordered.splice(fromIndex, 1);
+  ordered.splice(targetIndex, 0, moved);
+  ordered.forEach((task, index) => {
+    task.checklistOrder = ordered.length - index;
+  });
+
+  pushHistory(nextState, "checklist-reorder", `Ordem operacional atualizada: ${moved.title}`);
   return nextState;
 }
 
@@ -2867,6 +3170,39 @@ export function addInboxTask(state, payload) {
   }, null);
   nextState.tasks.unshift(task);
   pushHistory(nextState, "task-captured", `Nova tarefa capturada: ${task.title}`);
+  return nextState;
+}
+
+export function addChecklistTask(state, payload) {
+  const nextState = cloneState(state);
+  const view = payload.checklistView || nextState.ui.checklistView || "all";
+  const defaultAreaId = view === "health"
+    ? "area-health"
+    : view === "routine"
+      ? "area-routine"
+      : view === "work" || view === "projects"
+        ? "area-work"
+        : nextState.areas[0]?.id || "";
+  const shouldScheduleToday = !["no-date", "completed"].includes(view);
+  const scheduledDate = payload.scheduledDate || (shouldScheduleToday ? (payload.selectedDate || nextState.ui.selectedDate) : "");
+  const areaId = payload.areaId || defaultAreaId;
+  const projectId = areaId === "area-work"
+    ? (payload.projectId || (view === "projects" ? nextState.projects[0]?.id || "" : ""))
+    : "";
+  const task = normalizeTaskPayload(nextState, {
+    ...payload,
+    areaId,
+    projectId,
+    subtasks: payload.checklist || payload.subtasks || [],
+    location: scheduledDate ? "scheduled" : "inbox",
+    status: scheduledDate ? "todo" : "inbox",
+    scheduledDate,
+    dueDate: payload.dueDate || scheduledDate || "",
+    source: "checklist",
+  }, null);
+
+  nextState.tasks.unshift(task);
+  pushHistory(nextState, "task-captured", `Nova tarefa criada na checklist: ${task.title}`);
   return nextState;
 }
 
@@ -3150,6 +3486,7 @@ export function applyTaskAction(state, taskId, action, _meta = {}, referenceDate
     task.finalBucket = "do-now";
     task.completedAt = nowIso();
     task.manualDecision = false;
+    task.completedSubtasks = (task.subtasks || []).map((_item, index) => index);
   }
 
   if (action === "today" || action === "resolve-now") {
@@ -3160,6 +3497,18 @@ export function applyTaskAction(state, taskId, action, _meta = {}, referenceDate
     task.finalBucket = "do-now";
     task.manualDecision = false;
     task.riskAccepted = false;
+    task.completedAt = "";
+  }
+
+  if (action === "reopen") {
+    task.status = task.finalBucket === "backlog" ? "backlog" : "todo";
+    task.location = task.scheduledDate
+      ? "scheduled"
+      : task.finalBucket === "backlog"
+        ? "backlog"
+        : "inbox";
+    task.manualDecision = false;
+    task.completedAt = "";
   }
 
   if (action === "backlog") {

@@ -12,6 +12,7 @@ function task(overrides) {
     id: overrides.id,
     title: overrides.title,
     subtasks: overrides.subtasks || [],
+    completedSubtasks: overrides.completedSubtasks || [],
     areaId: overrides.areaId,
     projectId: overrides.projectId || "",
     objectiveId: overrides.objectiveId || "",
@@ -48,6 +49,7 @@ function task(overrides) {
     completedAt: overrides.completedAt || "",
     source: overrides.source || "seed",
     lastAction: overrides.lastAction || "",
+    checklistOrder: Number(overrides.checklistOrder || 0),
   };
 }
 
@@ -78,6 +80,7 @@ function routine(overrides) {
     active: overrides.active !== false,
     recurring: overrides.recurring !== false,
     note: overrides.note || "",
+    logs: overrides.logs || [],
   };
 }
 
@@ -401,11 +404,12 @@ export function buildSeedState(baseDate = new Date()) {
       routineWindows: { morning: "07:00-12:00", deepWork: "13:00-17:00", secondShift: "22:00-00:00" },
       notes: "O sistema precisa parecer calmo na frente e ser inteligente por tras.",
     },
-    ui: {
-      activeSection: "today",
-      selectedDate: today,
-      priorityMethod: "pipeline",
-      filters: { scope: "integrated", areaId: "all", projectId: "all", context: "all", dayTypeId: "all" },
+  ui: {
+    activeSection: "today",
+    selectedDate: today,
+    priorityMethod: "pipeline",
+    checklistView: "all",
+    filters: { scope: "integrated", areaId: "all", projectId: "all", context: "all", dayTypeId: "all" },
       editor: { kind: "", id: "" },
     },
     weeklyPlan: { energyLevel: 3, mainFocus: "Avancar na mudanca e nos projetos sem sacrificar saude e familia." },
