@@ -3,6 +3,7 @@ import { GoogleCalendarService } from "./google-calendar.js";
 import { loadAppState, resetAppState, saveAppState } from "./storage.js";
 import { createVoiceRecognizer, getVoiceCaptureSupport } from "./voice-capture.js";
 import {
+  addChecklistTask,
   addInboxTask,
   analyzeCaptureText,
   applyGoogleBusyBlocks,
@@ -18,6 +19,7 @@ import {
   replanWeek,
   resizeLayoutCard,
   restoreLayoutDefault,
+  reorderChecklistTask,
   saveCurrentLayoutAsDefault,
   confirmVoiceCapture,
   saveEntity,
@@ -33,10 +35,13 @@ import {
   setDayPeriodType,
   setDayType,
   setFilter,
+  setChecklistView,
   setPriorityMethod,
   setSelectedDate,
   toggleDietMealForDate,
   toggleHealthCareForDate,
+  toggleRoutineForDate,
+  toggleTaskSubtask,
   setWeeklyEnergy,
   toggleEditMode,
   toggleHabitForDate,
@@ -54,6 +59,7 @@ const SECTION_GROUPS = [
     items: [
       { id: "dashboard", label: "Dashboard" },
       { id: "today", label: "Hoje" },
+      { id: "checklist", label: "Checklist" },
       { id: "days", label: "Dias" },
       { id: "agenda", label: "Agenda" },
     ],
@@ -82,6 +88,7 @@ const SECTION_GROUPS = [
 const PAGE_META = {
   dashboard: { kicker: "Controle", title: "Dashboard", text: "Visao geral, resultados, gargalos e carga semanal." },
   today: { kicker: "Execucao", title: "Hoje", text: "Poucas coisas, muita clareza e zero ruido desnecessario." },
+  checklist: { kicker: "Operacao", title: "Checklist", text: "Execucao rapida, listas claras e andamento sincronizado com o resto do sistema." },
   days: { kicker: "Capacidade", title: "Dias", text: "Semana editavel por dia e por periodo." },
   inbox: { kicker: "Captura", title: "Entrada", text: "Caixa de entrada rapida para tudo que surgir no dia." },
   prioritize: { kicker: "Decisao", title: "Priorizar", text: "GTD, Sapo e refino agil explicados visualmente." },
@@ -313,26 +320,231 @@ function renderChecklistItems(items, _selectedDate) {
     <div class="stack-list compact-stack">
       ${items.map((item) => {
         const action = item.kind === "habit"
-          ? `<button class="tiny-button ${item.done ? "ghost" : ""}" data-action="toggle-habit-inline" data-habit-id="${item.id}" data-date="${_selectedDate}">${item.done ? "Feito" : "Marcar"}</button>`
+          ? `<button class="tiny-button ${item.done ? "ghost" : ""}" data-action="toggle-habit-inline" data-habit-id="${item.id}" data-date="${_selectedDate}" aria-label="${item.done ? "Desmarcar" : "Marcar"} habito ${escapeHtml(item.title)}">${item.done ? "Feito" : "Marcar"}</button>`
           : item.kind === "routine"
-            ? `<span class="badge">Rotina</span>`
+            ? `<button class="tiny-button ${item.done ? "ghost" : ""}" data-action="toggle-routine-inline" data-routine-id="${item.id}" data-date="${_selectedDate}" aria-label="${item.done ? "Desmarcar" : "Marcar"} rotina ${escapeHtml(item.title)}">${item.done ? "Feito" : "Marcar"}</button>`
           : item.kind === "care"
-            ? `<button class="tiny-button ${item.done ? "ghost" : ""}" data-action="toggle-care-inline" data-care-id="${item.id}" data-date="${_selectedDate}">${item.done ? "Feito" : "Marcar"}</button>`
+            ? `<button class="tiny-button ${item.done ? "ghost" : ""}" data-action="toggle-care-inline" data-care-id="${item.id}" data-date="${_selectedDate}" aria-label="${item.done ? "Desmarcar" : "Marcar"} cuidado ${escapeHtml(item.title)}">${item.done ? "Feito" : "Marcar"}</button>`
             : item.kind === "diet"
-              ? `<button class="tiny-button ${item.done ? "ghost" : ""}" data-action="toggle-diet-inline" data-diet-id="${item.id}" data-date="${_selectedDate}">${item.done ? "Seguido" : "Marcar"}</button>`
-              : `<button class="tiny-button ${item.done ? "ghost" : ""}" data-task-action="${item.done ? "today" : "complete"}" data-task-id="${item.id}">${item.done ? "Reabrir" : "Concluir"}</button>`;
+              ? `<button class="tiny-button ${item.done ? "ghost" : ""}" data-action="toggle-diet-inline" data-diet-id="${item.id}" data-date="${_selectedDate}" aria-label="${item.done ? "Desmarcar" : "Marcar"} refeicao ${escapeHtml(item.title)}">${item.done ? "Seguido" : "Marcar"}</button>`
+              : `<button class="tiny-button ${item.done ? "ghost" : ""}" data-task-action="${item.done ? "reopen" : "complete"}" data-task-id="${item.id}" aria-label="${item.done ? "Reabrir" : "Concluir"} tarefa ${escapeHtml(item.title)}">${item.done ? "Reabrir" : "Concluir"}</button>`;
 
         return `
           <article class="checklist-card ${item.done ? "done" : ""}">
             <div>
               <strong>${escapeHtml(item.title)}</strong>
-              <p>${escapeHtml(item.period)}${item.note ? ` • ${escapeHtml(item.note)}` : ""}</p>
+              <p>${escapeHtml(item.period)}${item.note ? ` • ${escapeHtml(item.note)}` : ""}${item.areaName ? ` • ${escapeHtml(item.areaName)}` : ""}</p>
             </div>
             ${action}
           </article>
         `;
       }).join("")}
     </div>
+  `;
+}
+
+function renderChecklistViewButtons(model) {
+  return model.checklist.views.map((view) => `
+    <button
+      class="checklist-nav-button ${model.checklist.activeView === view.id ? "active" : ""}"
+      data-action="set-checklist-view"
+      data-checklist-view="${view.id}"
+    >
+      <span>${escapeHtml(view.label)}</span>
+      <strong>${view.count}</strong>
+    </button>
+  `).join("");
+}
+
+function renderChecklistRow(entry) {
+  const isTask = entry.kind === "task";
+  const isDone = Boolean(entry.done || entry.status === "done");
+  const doneAction = isTask
+    ? `data-task-action="${isDone ? "reopen" : "complete"}" data-task-id="${entry.id}"`
+    : entry.kind === "habit"
+      ? `data-action="toggle-habit-inline" data-habit-id="${entry.id}" data-date="${entry.scheduledDate}"`
+      : entry.kind === "routine"
+        ? `data-action="toggle-routine-inline" data-routine-id="${entry.id}" data-date="${entry.scheduledDate}"`
+        : entry.kind === "care"
+          ? `data-action="toggle-care-inline" data-care-id="${entry.id}" data-date="${entry.scheduledDate}"`
+          : `data-action="toggle-diet-inline" data-diet-id="${entry.id}" data-date="${entry.scheduledDate}"`;
+  const toggleLabel = isTask
+    ? `${isDone ? "Reabrir" : "Concluir"} tarefa ${entry.title}`
+    : `${isDone ? "Desmarcar" : "Marcar"} ${entry.title}`;
+  const subtaskList = isTask && entry.subtasks?.length
+    ? `
+      <div class="checklist-subtasks">
+        ${entry.subtasks.map((subtask, index) => {
+          const checked = (entry.completedSubtasks || []).includes(index);
+          return `
+            <button
+              class="checklist-subtask-chip ${checked ? "done" : ""}"
+              data-action="toggle-task-subtask"
+              data-task-id="${entry.id}"
+              data-subtask-index="${index}"
+              aria-label="${checked ? "Desmarcar" : "Marcar"} subtarefa ${escapeHtml(subtask)}"
+            >
+              <span>${checked ? "OK" : "..."}</span>
+              <small>${escapeHtml(subtask)}</small>
+            </button>
+          `;
+        }).join("")}
+      </div>
+    `
+    : "";
+  const meta = isTask
+    ? metaPills([
+      entry.areaName,
+      entry.projectName || "",
+      entry.priority ? `Prioridade ${entry.priority}` : "",
+      entry.dueLabel ? `Prazo ${entry.dueLabel}` : "",
+    ])
+    : metaPills([
+      entry.areaName || "",
+      entry.sectionLabel || "",
+      entry.period || "",
+    ]);
+  const editKind = isTask
+    ? "task"
+    : entry.kind === "habit"
+      ? "habit"
+      : entry.kind === "routine"
+        ? "routine"
+        : entry.kind === "care"
+          ? "health-care"
+          : "diet-meal";
+
+  return `
+    <article
+      class="checklist-row ${isDone ? "done" : ""} ${isTask ? "task" : "support"}"
+      ${isTask && !isDone ? 'draggable="true"' : ""}
+      ${isTask && !isDone ? `data-checklist-task="${entry.id}" data-checklist-drop-task="${entry.id}"` : ""}
+    >
+      <button class="check-toggle ${isDone ? "done" : ""}" ${doneAction} aria-label="${escapeHtml(toggleLabel)}">
+        ${isDone ? "OK" : ""}
+      </button>
+      <div class="checklist-row-main">
+        <div class="checklist-row-copy">
+          <strong>${escapeHtml(entry.title)}</strong>
+          ${meta ? `<div class="meta-row">${meta}</div>` : ""}
+          ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}
+        </div>
+        ${subtaskList}
+      </div>
+      <div class="checklist-row-side">
+        ${isTask ? `<span class="checklist-score">${Math.round(entry.score || 0)}</span>` : `<span class="badge">${escapeHtml(entry.period || entry.sectionLabel || "Checklist")}</span>`}
+        <div class="task-actions compact-actions">
+          ${isTask && !isDone ? `<button class="ghost-button small" data-task-action="today" data-task-id="${entry.id}">Hoje</button>` : ""}
+          <button class="ghost-button small" data-action="open-editor" data-kind="${editKind}" data-id="${entry.id}">Editar</button>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function renderChecklistQuickAdd(model) {
+  const defaults = model.checklist.quickDefaults || {};
+  return `
+    <section class="checklist-quick-add">
+      <div class="checklist-quick-copy">
+        <span class="page-kicker">Nova tarefa</span>
+        <strong>Adicionar rapido</strong>
+        <p>Capture e execute sem sair da tela operacional.</p>
+      </div>
+      <form class="checklist-quick-form" data-form="checklist-quick-add">
+        <input type="hidden" name="checklistView" value="${escapeHtml(model.checklist.activeView)}" />
+        <input type="hidden" name="selectedDate" value="${escapeHtml(model.selectedDate)}" />
+        <label class="field">
+          <span>Titulo</span>
+          <input name="title" placeholder="Ex: ligar para cliente e fechar documento" required />
+        </label>
+        <div class="field-grid three">
+          <label class="field compact">
+            <span>Area</span>
+            <select name="areaId">
+              ${model.options.areas.map((area) => `<option value="${area.id}" ${defaults.areaId === area.id ? "selected" : ""}>${escapeHtml(area.name)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="field compact">
+            <span>Projeto</span>
+            <select name="projectId">
+              <option value="">Sem projeto</option>
+              ${model.options.projects.map((project) => `<option value="${project.id}" ${defaults.projectId === project.id ? "selected" : ""}>${escapeHtml(project.name)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="field compact">
+            <span>Prazo</span>
+            <input type="date" name="dueDate" value="${model.checklist.activeView === "today" ? escapeHtml(model.selectedDate) : ""}" />
+          </label>
+        </div>
+        <label class="field">
+          <span>Checklist / subtarefas</span>
+          <textarea name="checklist" placeholder="Uma linha por item"></textarea>
+        </label>
+        <div class="toolbar-row">
+          <button class="primary-button" type="submit">Adicionar tarefa</button>
+          <button class="ghost-button" type="button" data-action="navigate" data-section="inbox">Abrir Entrada</button>
+        </div>
+      </form>
+    </section>
+  `;
+}
+
+function renderChecklistPage(model, options = {}) {
+  const mainGroups = model.checklist.groups?.length
+    ? model.checklist.groups.map((group) => `
+        <section class="checklist-group">
+          <div class="checklist-group-head">
+            <h3>${escapeHtml(group.label)}</h3>
+            ${badge(`${group.count}`)}
+          </div>
+          <div class="checklist-group-body">
+            ${group.entries.length
+              ? group.entries.map((entry) => renderChecklistRow(entry)).join("")
+              : emptyState(group.emptyMessage || "Sem itens nesta lista.")}
+          </div>
+        </section>
+      `).join("")
+    : emptyState("Nada para executar nesta lista agora.");
+
+  const rail = `
+    <aside class="checklist-rail">
+      <div class="checklist-rail-card">
+        <span class="page-kicker">Listas</span>
+        <h3>Execucao rapida</h3>
+        <p>Inspirado no TickTick: menos friccao, mais clareza operacional.</p>
+      </div>
+      <div class="checklist-nav-list">
+        ${renderChecklistViewButtons(model, options)}
+      </div>
+    </aside>
+  `;
+
+  const summaryPills = metaPills([
+    `${model.checklist.views.find((view) => view.id === model.checklist.activeView)?.label || "Lista atual"}`,
+    `${model.checklist.groups.reduce((sum, group) => sum + group.count, 0)} item(ns)`,
+    `${model.selectedDay.totalLoad}/${model.selectedDay.totalCapacity} min no dia`,
+  ]);
+
+  return `
+    <section class="checklist-workspace ${options.isMobile ? "mobile" : ""}">
+      ${options.isMobile ? "" : rail}
+      <div class="checklist-main">
+        <section class="checklist-header">
+          <div>
+            <span class="page-kicker">Checklist operacional</span>
+            <h3>${escapeHtml(model.checklist.views.find((view) => view.id === model.checklist.activeView)?.label || "Checklist")}</h3>
+            <p>Marque, edite, arraste e reorganize. O que voce concluir aqui reflete no Hoje e no resto do sistema.</p>
+          </div>
+          <div class="meta-row">${summaryPills}</div>
+        </section>
+        ${options.isMobile ? `<div class="checklist-mobile-rail">${renderChecklistViewButtons(model, options)}</div>` : ""}
+        ${renderChecklistQuickAdd(model)}
+        <section class="checklist-groups">
+          ${mainGroups}
+        </section>
+      </div>
+    </section>
   `;
 }
 
@@ -990,6 +1202,7 @@ function renderTodayPage(model, options = {}) {
         <p>${escapeHtml(model.selectedDay.longLabel)} • ${model.selectedDay.totalLoad}/${model.selectedDay.totalCapacity} min • ${model.selectedDay.alerts} alerta(s)</p>
       </div>
       <div class="toolbar-row">
+        <button class="primary-button" data-action="navigate" data-section="checklist">Abrir checklist</button>
         <button class="secondary-button" data-action="navigate" data-section="prioritize">Abrir priorizacao</button>
         <button class="ghost-button" data-action="navigate" data-section="inbox">Capturar algo novo</button>
         ${renderVoiceCaptureButton("Entrada rapida", "today")}
@@ -1192,7 +1405,7 @@ function renderRoutinePage(model) {
             <button class="ghost-button small" data-action="open-editor" data-kind="routine" data-id="new-routine">Novo item</button>
           </div>
           <div class="stack-list compact-stack">
-            ${model.routine.morning.map((item) => `<label class="check-row"><span>${escapeHtml(item.title)}</span><button class="ghost-button small" data-action="open-editor" data-kind="routine" data-id="${item.id}">Editar</button></label>`).join("") || emptyState("Sem itens de manha.")}
+            ${model.routine.morning.map((item) => `<label class="check-row"><span>${escapeHtml(item.title)}</span><div class="task-actions compact-actions"><button class="tiny-button ${(item.doneToday || false) ? "ghost" : ""}" data-action="toggle-routine-inline" data-routine-id="${item.id}" data-date="${model.selectedDate}">${(item.doneToday || false) ? "Feito" : "Marcar"}</button><button class="ghost-button small" data-action="open-editor" data-kind="routine" data-id="${item.id}">Editar</button></div></label>`).join("") || emptyState("Sem itens de manha.")}
           </div>
         </div>
         <div class="reading-card">
@@ -1201,7 +1414,7 @@ function renderRoutinePage(model) {
             <button class="ghost-button small" data-action="open-editor" data-kind="routine" data-id="new-routine">Novo item</button>
           </div>
           <div class="stack-list compact-stack">
-            ${model.routine.night.map((item) => `<label class="check-row"><span>${escapeHtml(item.title)}</span><button class="ghost-button small" data-action="open-editor" data-kind="routine" data-id="${item.id}">Editar</button></label>`).join("") || emptyState("Sem itens de noite.")}
+            ${model.routine.night.map((item) => `<label class="check-row"><span>${escapeHtml(item.title)}</span><div class="task-actions compact-actions"><button class="tiny-button ${(item.doneToday || false) ? "ghost" : ""}" data-action="toggle-routine-inline" data-routine-id="${item.id}" data-date="${model.selectedDate}">${(item.doneToday || false) ? "Feito" : "Marcar"}</button><button class="ghost-button small" data-action="open-editor" data-kind="routine" data-id="${item.id}">Editar</button></div></label>`).join("") || emptyState("Sem itens de noite.")}
           </div>
         </div>
       </div>
@@ -1573,6 +1786,7 @@ function formDataToObject(form) {
 function renderActivePage(model, options = {}) {
   switch (model.activeSection) {
     case "dashboard": return renderDashboardPage(model);
+    case "checklist": return renderChecklistPage(model, options);
     case "days": return renderDaysPage(model);
     case "inbox": return renderInboxPage(model);
     case "prioritize": return renderPrioritizePage(model, options);
@@ -1861,14 +2075,17 @@ export class LifeOSApp {
     if (action === "close-mobile-nav") { this.mobileNavOpen = false; this.render(); return; }
     if (action === "navigate") { this.state = setActiveSection(this.state, trigger.dataset.section); this.mobileNavOpen = false; await this.persist(); return; }
     if (action === "select-day") { this.state = setSelectedDate(this.state, trigger.dataset.date); await this.persist(); return; }
+    if (action === "set-checklist-view") { this.state = setChecklistView(this.state, trigger.dataset.checklistView); await this.persist(); return; }
     if (action === "set-filter") { this.state = setFilter(this.state, trigger.dataset.filterName, trigger.dataset.filterValue); await this.persist(); return; }
     if (action === "clear-filters") { this.state = clearFilters(this.state); await this.persist("Filtros limpos."); return; }
     if (action === "set-priority-method") { this.state = setPriorityMethod(this.state, trigger.dataset.method); await this.persist("Metodo atualizado."); return; }
     if (action === "set-energy") { this.state = setWeeklyEnergy(this.state, trigger.dataset.energy); await this.persist("Energia semanal ajustada."); return; }
     if (action === "toggle-habit") { this.state = toggleHabitForDate(this.state, trigger.dataset.habitId, trigger.dataset.date || today); await this.persist("Habito atualizado."); return; }
     if (action === "toggle-habit-inline") { this.state = toggleHabitForDate(this.state, trigger.dataset.habitId, trigger.dataset.date || today); await this.persist("Checklist do dia atualizado."); return; }
+    if (action === "toggle-routine-inline") { this.state = toggleRoutineForDate(this.state, trigger.dataset.routineId, trigger.dataset.date || today); await this.persist("Rotina do dia atualizada."); return; }
     if (action === "toggle-care-inline") { this.state = toggleHealthCareForDate(this.state, trigger.dataset.careId, trigger.dataset.date || today); await this.persist("Checklist de saude atualizado."); return; }
     if (action === "toggle-diet-inline") { this.state = toggleDietMealForDate(this.state, trigger.dataset.dietId, trigger.dataset.date || today); await this.persist("Dieta do dia atualizada."); return; }
+    if (action === "toggle-task-subtask") { this.state = toggleTaskSubtask(this.state, trigger.dataset.taskId, trigger.dataset.subtaskIndex); await this.persist("Checklist da tarefa atualizado."); return; }
     if (action === "move-task-bucket") { this.state = moveTaskToBucket(this.state, trigger.dataset.taskId, trigger.dataset.bucketId); await this.persist("Fluxo da tarefa atualizado."); return; }
     if (action === "open-editor") { this.state = openEditor(this.state, trigger.dataset.kind, trigger.dataset.id || ""); this.render(); return; }
     if (action === "close-editor" || action === "close-editor-backdrop") { if (action === "close-editor-backdrop" && event.target !== trigger) return; this.state = closeEditor(this.state); this.render(); return; }
@@ -1937,6 +2154,7 @@ export class LifeOSApp {
     if (!(form instanceof HTMLFormElement)) return;
     event.preventDefault();
     if (form.dataset.form === "capture-task") { this.state = addInboxTask(this.state, formDataToObject(form)); form.reset(); await this.persist("Nova tarefa capturada na inbox."); return; }
+    if (form.dataset.form === "checklist-quick-add") { this.state = addChecklistTask(this.state, formDataToObject(form)); form.reset(); await this.persist("Nova tarefa criada na checklist."); return; }
     if (form.dataset.form === "voice-capture-confirm") {
       const payload = formDataToObject(form);
       const result = confirmVoiceCapture(this.state, payload, {
@@ -1964,6 +2182,14 @@ export class LifeOSApp {
   }
 
   handleDragStart(event) {
+    const checklistItem = event.target.closest("[data-checklist-task]");
+    if (checklistItem) {
+      this.dragItem = { kind: "checklist-task", taskId: checklistItem.dataset.checklistTask };
+      checklistItem.classList.add("dragging");
+      event.dataTransfer.effectAllowed = "move";
+      return;
+    }
+
     const organizeItem = event.target.closest("[data-organize-task]");
     if (organizeItem) {
       this.dragItem = { kind: "organize-task", taskId: organizeItem.dataset.organizeTask };
@@ -1981,6 +2207,15 @@ export class LifeOSApp {
 
   handleDragOver(event) {
     if (!this.dragItem) return;
+    if (this.dragItem.kind === "checklist-task") {
+      const row = event.target.closest("[data-checklist-drop-task]");
+      if (!row) return;
+      event.preventDefault();
+      this.root.querySelectorAll(".checklist-row.drag-target").forEach((entry) => entry.classList.remove("drag-target"));
+      row.classList.add("drag-target");
+      return;
+    }
+
     if (this.dragItem.kind === "layout") {
       const item = event.target.closest("[data-layout-card]");
       if (!item) return;
@@ -2014,6 +2249,16 @@ export class LifeOSApp {
       return;
     }
 
+    if (this.dragItem.kind === "checklist-task") {
+      const row = event.target.closest("[data-checklist-drop-task]");
+      if (!row) return;
+      this.state = reorderChecklistTask(this.state, this.dragItem.taskId, row.dataset.checklistDropTask);
+      this.root.querySelectorAll(".checklist-row.drag-target").forEach((entry) => entry.classList.remove("drag-target"));
+      this.dragItem = null;
+      await this.persist("Ordem da checklist atualizada.");
+      return;
+    }
+
     if (this.dragItem.kind === "organize-task") {
       const bucket = event.target.closest("[data-organize-bucket]");
       if (!bucket) return;
@@ -2030,6 +2275,8 @@ export class LifeOSApp {
   handleDragEnd() {
     this.dragItem = null;
     this.root.querySelectorAll(".layout-card.dragging").forEach((card) => card.classList.remove("dragging"));
+    this.root.querySelectorAll("[data-checklist-task].dragging").forEach((card) => card.classList.remove("dragging"));
+    this.root.querySelectorAll(".checklist-row.drag-target").forEach((card) => card.classList.remove("drag-target"));
     this.root.querySelectorAll("[data-organize-task].dragging").forEach((card) => card.classList.remove("dragging"));
     this.root.querySelectorAll(".organize-drop-zone.drag-target").forEach((card) => card.classList.remove("drag-target"));
   }
