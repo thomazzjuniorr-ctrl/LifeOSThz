@@ -4,11 +4,11 @@ import { loadAppState, resetAppState, saveAppState } from "./storage.js";
 import { createVoiceRecognizer, getVoiceCaptureSupport } from "./voice-capture.js";
 import {
   addChecklistTask,
-  addInboxTask,
   analyzeCaptureText,
   applyGoogleBusyBlocks,
   applyTaskAction,
   buildAppModel,
+  captureInboxTask,
   clearFilters,
   closeEditor,
   deleteEntity,
@@ -31,6 +31,7 @@ import {
   saveHealthWorkout,
   saveSettings,
   setActiveSection,
+  setActiveSprint,
   setCalendarConnected,
   setDayPeriodType,
   setDayType,
@@ -180,6 +181,102 @@ function progressBar(value) {
   `;
 }
 
+function getChecklistToggleMeta(entry = {}) {
+  if (entry.kind === "habit") {
+    return { action: "toggle-habit-inline", attr: "data-habit-id", value: entry.id, label: "habito" };
+  }
+
+  if (entry.kind === "routine") {
+    return { action: "toggle-routine-inline", attr: "data-routine-id", value: entry.id, label: "rotina" };
+  }
+
+  if (entry.kind === "care") {
+    return { action: "toggle-care-inline", attr: "data-care-id", value: entry.id, label: "cuidado" };
+  }
+
+  if (entry.kind === "diet") {
+    return { action: "toggle-diet-inline", attr: "data-diet-id", value: entry.id, label: "refeicao" };
+  }
+
+  return null;
+}
+
+function buildChecklistToggleButton(entry, date) {
+  const meta = getChecklistToggleMeta(entry);
+  if (!meta) {
+    return "";
+  }
+
+  return `<button class="check-toggle ${entry.done ? "done" : ""}" data-action="${meta.action}" ${meta.attr}="${entry.id}" data-date="${date}" aria-label="${escapeHtml(`${entry.done ? "Desmarcar" : "Marcar"} ${meta.label} ${entry.title}`)}">${entry.done ? "OK" : ""}</button>`;
+}
+
+function renderWeeklyTracker(tracker, options = {}) {
+  if (!tracker) return "";
+  const actionMap = {
+    habit: { action: "toggle-habit", attr: "data-habit-id" },
+    routine: { action: "toggle-routine-inline", attr: "data-routine-id" },
+    care: { action: "toggle-care-inline", attr: "data-care-id" },
+  };
+  const config = actionMap[tracker.kind] || actionMap.habit;
+
+  return `
+    <article class="weekly-tracker-card">
+      <div class="weekly-tracker-head">
+        <div>
+          <strong>${escapeHtml(tracker.title)}</strong>
+          <p>${escapeHtml(tracker.areaName || "")}${tracker.note ? ` • ${escapeHtml(tracker.note)}` : ""}</p>
+        </div>
+        <div class="weekly-tracker-meta">
+          <span>${escapeHtml(`${tracker.currentWeekDone}/${tracker.targetPerWeek} na semana`)}</span>
+          <strong>${escapeHtml(tracker.progressLabel)}</strong>
+        </div>
+      </div>
+      ${progressBar(tracker.monthExpected ? Math.round((tracker.monthDone / tracker.monthExpected) * 100) : 0)}
+      <div class="weekly-tracker-table">
+        <div class="weekly-tracker-weekdays">
+          ${["Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado", "Domingo"].map((day) => `<span>${escapeHtml(day)}</span>`).join("")}
+        </div>
+        ${tracker.weeks.map((week) => `
+          <div class="weekly-tracker-row">
+            <strong>${escapeHtml(week.label)}</strong>
+            <div class="weekly-tracker-days">
+              ${week.days.map((day) => day.inMonth
+                ? `<button class="weekly-day-chip ${day.done ? "done" : ""} ${day.selected ? "selected" : ""}" data-action="${config.action}" ${config.attr}="${tracker.id}" data-date="${day.date}">${escapeHtml(day.weekdayLabel)}</button>`
+                : `<span class="weekly-day-chip empty">-</span>`).join("")}
+            </div>
+          </div>
+        `).join("")}
+      </div>
+      ${options.showSummary !== false ? `<div class="meta-row">${metaPills([`${tracker.monthDone}/${tracker.monthExpected} no mes`, `${tracker.targetPerWeek} alvo por semana`])}</div>` : ""}
+    </article>
+  `;
+}
+
+function getTaskActionMessage(action, taskTitle = "") {
+  const label = taskTitle ? `: ${taskTitle}` : "";
+  const map = {
+    complete: `Tarefa concluida${label}.`,
+    reopen: `Tarefa reaberta${label}.`,
+    today: `Tarefa enviada para hoje${label}.`,
+    "resolve-now": `Tarefa puxada para agora${label}.`,
+    "auto-defer": `Tarefa reagendada${label}.`,
+    backlog: `Tarefa movida para backlog${label}.`,
+    inbox: `Tarefa voltou para a entrada${label}.`,
+    delegate: `Tarefa marcada para delegacao${label}.`,
+    waiting: `Tarefa marcada como aguardando${label}.`,
+    discard: `Tarefa descartada${label}.`,
+    "mark-frog-day": `Sapo do dia atualizado${label}.`,
+    "mark-frog-week": `Sapo da semana atualizado${label}.`,
+    "clear-frog": `Marcacao de sapo limpa${label}.`,
+    reprocess: `Tarefa enviada para reprocessamento${label}.`,
+    "as-template": `Tarefa transformada em modelo${label}.`,
+    "instantiate-template": `Modelo instanciado${label}.`,
+    "keep-original": `Tarefa mantida no dia atual${label}.`,
+    "accept-risk": `Risco aceito para a tarefa${label}.`,
+  };
+  return map[action] || `Tarefa atualizada${label}.`;
+}
+
 function taskActions(task, mode = "default") {
   const buttons = [];
 
@@ -319,15 +416,10 @@ function renderChecklistItems(items, _selectedDate) {
   return `
     <div class="stack-list compact-stack">
       ${items.map((item) => {
-        const action = item.kind === "habit"
-          ? `<button class="tiny-button ${item.done ? "ghost" : ""}" data-action="toggle-habit-inline" data-habit-id="${item.id}" data-date="${_selectedDate}" aria-label="${item.done ? "Desmarcar" : "Marcar"} habito ${escapeHtml(item.title)}">${item.done ? "Feito" : "Marcar"}</button>`
-          : item.kind === "routine"
-            ? `<button class="tiny-button ${item.done ? "ghost" : ""}" data-action="toggle-routine-inline" data-routine-id="${item.id}" data-date="${_selectedDate}" aria-label="${item.done ? "Desmarcar" : "Marcar"} rotina ${escapeHtml(item.title)}">${item.done ? "Feito" : "Marcar"}</button>`
-          : item.kind === "care"
-            ? `<button class="tiny-button ${item.done ? "ghost" : ""}" data-action="toggle-care-inline" data-care-id="${item.id}" data-date="${_selectedDate}" aria-label="${item.done ? "Desmarcar" : "Marcar"} cuidado ${escapeHtml(item.title)}">${item.done ? "Feito" : "Marcar"}</button>`
-            : item.kind === "diet"
-              ? `<button class="tiny-button ${item.done ? "ghost" : ""}" data-action="toggle-diet-inline" data-diet-id="${item.id}" data-date="${_selectedDate}" aria-label="${item.done ? "Desmarcar" : "Marcar"} refeicao ${escapeHtml(item.title)}">${item.done ? "Seguido" : "Marcar"}</button>`
-              : `<button class="tiny-button ${item.done ? "ghost" : ""}" data-task-action="${item.done ? "reopen" : "complete"}" data-task-id="${item.id}" aria-label="${item.done ? "Reabrir" : "Concluir"} tarefa ${escapeHtml(item.title)}">${item.done ? "Reabrir" : "Concluir"}</button>`;
+        const supportToggle = getChecklistToggleMeta(item);
+        const action = supportToggle
+          ? `<button class="tiny-button ${item.done ? "ghost" : ""}" data-action="${supportToggle.action}" ${supportToggle.attr}="${item.id}" data-date="${_selectedDate}" aria-label="${item.done ? "Desmarcar" : "Marcar"} ${supportToggle.label} ${escapeHtml(item.title)}">${item.done ? "Feito" : "Marcar"}</button>`
+          : `<button class="tiny-button ${item.done ? "ghost" : ""}" data-task-action="${item.done ? "reopen" : "complete"}" data-task-id="${item.id}" aria-label="${item.done ? "Reabrir" : "Concluir"} tarefa ${escapeHtml(item.title)}">${item.done ? "Reabrir" : "Concluir"}</button>`;
 
         return `
           <article class="checklist-card ${item.done ? "done" : ""}">
@@ -359,15 +451,12 @@ function renderChecklistViewButtons(model) {
 function renderChecklistRow(entry) {
   const isTask = entry.kind === "task";
   const isDone = Boolean(entry.done || entry.status === "done");
+  const supportToggle = getChecklistToggleMeta(entry);
   const doneAction = isTask
     ? `data-task-action="${isDone ? "reopen" : "complete"}" data-task-id="${entry.id}"`
-    : entry.kind === "habit"
-      ? `data-action="toggle-habit-inline" data-habit-id="${entry.id}" data-date="${entry.scheduledDate}"`
-      : entry.kind === "routine"
-        ? `data-action="toggle-routine-inline" data-routine-id="${entry.id}" data-date="${entry.scheduledDate}"`
-        : entry.kind === "care"
-          ? `data-action="toggle-care-inline" data-care-id="${entry.id}" data-date="${entry.scheduledDate}"`
-          : `data-action="toggle-diet-inline" data-diet-id="${entry.id}" data-date="${entry.scheduledDate}"`;
+    : supportToggle
+      ? `data-action="${supportToggle.action}" ${supportToggle.attr}="${entry.id}" data-date="${entry.scheduledDate}"`
+      : "";
   const toggleLabel = isTask
     ? `${isDone ? "Reabrir" : "Concluir"} tarefa ${entry.title}`
     : `${isDone ? "Desmarcar" : "Marcar"} ${entry.title}`;
@@ -420,9 +509,9 @@ function renderChecklistRow(entry) {
       ${isTask && !isDone ? 'draggable="true"' : ""}
       ${isTask && !isDone ? `data-checklist-task="${entry.id}" data-checklist-drop-task="${entry.id}"` : ""}
     >
-      <button class="check-toggle ${isDone ? "done" : ""}" ${doneAction} aria-label="${escapeHtml(toggleLabel)}">
-        ${isDone ? "OK" : ""}
-      </button>
+      ${isTask
+        ? `<button class="check-toggle ${isDone ? "done" : ""}" ${doneAction} aria-label="${escapeHtml(toggleLabel)}">${isDone ? "OK" : ""}</button>`
+        : (buildChecklistToggleButton({ ...entry, done: isDone }, entry.scheduledDate) || `<span class="check-toggle static"></span>`)}
       <div class="checklist-row-main">
         <div class="checklist-row-copy">
           <strong>${escapeHtml(entry.title)}</strong>
@@ -549,6 +638,7 @@ function renderChecklistPage(model, options = {}) {
 }
 
 function renderOrganizeTaskCard(task, options = {}) {
+  const periodOptions = options.periods?.map((period) => `<option value="${period.id}" ${task.scheduledPeriod === period.id ? "selected" : ""}>${escapeHtml(period.label)}</option>`).join("") || "";
   return `
     <article class="task-card organize-task-card" draggable="true" data-organize-task="${task.id}">
       <div class="task-card-top">
@@ -559,6 +649,18 @@ function renderOrganizeTaskCard(task, options = {}) {
         </div>
       </div>
       ${task.suggestions?.length ? `<div class="meta-row">${metaPills(task.suggestions)}</div>` : ""}
+      <div class="organize-decision-grid">
+        <label class="field compact">
+          <span>Dia</span>
+          <input type="date" value="${escapeHtml(task.scheduledDate || "")}" data-organize-task-id="${task.id}" data-organize-field="scheduledDate" />
+        </label>
+        <label class="field compact">
+          <span>Periodo</span>
+          <select data-organize-task-id="${task.id}" data-organize-field="scheduledPeriod">
+            ${periodOptions}
+          </select>
+        </label>
+      </div>
       <div class="bucket-move-grid">
         ${options.buckets.map((bucket) => `
           <button
@@ -570,6 +672,11 @@ function renderOrganizeTaskCard(task, options = {}) {
             ${escapeHtml(bucket.label)}
           </button>
         `).join("")}
+      </div>
+      <div class="toolbar-row">
+        <button class="ghost-button small" data-task-action="today" data-task-id="${task.id}">Hoje</button>
+        <button class="ghost-button small" data-task-action="reprocess" data-task-id="${task.id}">Reprocessar</button>
+        <button class="ghost-button small" data-action="open-editor" data-kind="task" data-id="${task.id}">Destrinchar</button>
       </div>
     </article>
   `;
@@ -642,39 +749,36 @@ function renderHabitWeekMatrixCard(habit) {
   `;
 }
 
-function renderAgendaTaskEditor(tasks, model) {
-  if (!tasks?.length) {
-    return emptyState("Nenhuma tarefa agendada neste dia.");
-  }
-
+function renderAgendaKanbanTask(task, model) {
   return `
-    <div class="stack-list compact-stack">
-      ${tasks.map((task) => `
-        <article class="agenda-editor-card">
-          <div class="agenda-editor-top">
-            <div>
-              <strong>${escapeHtml(task.title)}</strong>
-              <p>${escapeHtml(task.areaName)}${task.projectName ? ` • ${escapeHtml(task.projectName)}` : ""}</p>
-            </div>
-            <button class="ghost-button small" data-action="open-editor" data-kind="task" data-id="${task.id}">Editar</button>
-          </div>
-          <div class="field-grid two">
-            <label class="field compact">
-              <span>Dia</span>
-              <select data-agenda-task-id="${task.id}" data-agenda-field="scheduledDate">
-                ${model.agenda.days.map((day) => `<option value="${day.date}" ${task.scheduledDate === day.date ? "selected" : ""}>${escapeHtml(day.weekdayLabel.slice(0, 3))} • ${escapeHtml(day.shortLabel)}</option>`).join("")}
-              </select>
-            </label>
-            <label class="field compact">
-              <span>Periodo</span>
-              <select data-agenda-task-id="${task.id}" data-agenda-field="scheduledPeriod">
-                ${model.options.periods.map((period) => `<option value="${period.id}" ${task.scheduledPeriod === period.id ? "selected" : ""}>${escapeHtml(period.label)}</option>`).join("")}
-              </select>
-            </label>
-          </div>
-        </article>
-      `).join("")}
-    </div>
+    <article class="agenda-kanban-task" draggable="true" data-agenda-task="${task.id}">
+      <div class="task-card-top">
+        <div>
+          <strong>${escapeHtml(task.title)}</strong>
+          <p>${escapeHtml(task.areaName)}${task.projectName ? ` • ${escapeHtml(task.projectName)}` : ""}</p>
+        </div>
+        ${badge(task.priority ? `P ${task.priority}` : `Score ${Math.round(task.score || 0)}`)}
+      </div>
+      <div class="meta-row">${metaPills([task.periodLabel || "", task.dueLabel ? `Prazo ${task.dueLabel}` : "", `${task.estimatedMinutes} min`])}</div>
+      <div class="field-grid two compact-inline-grid">
+        <label class="field compact">
+          <span>Dia</span>
+          <select data-agenda-task-id="${task.id}" data-agenda-field="scheduledDate">
+            ${model.agenda.days.map((day) => `<option value="${day.date}" ${task.scheduledDate === day.date ? "selected" : ""}>${escapeHtml(day.weekdayLabel)}</option>`).join("")}
+          </select>
+        </label>
+        <label class="field compact">
+          <span>Periodo</span>
+          <select data-agenda-task-id="${task.id}" data-agenda-field="scheduledPeriod">
+            ${model.options.periods.map((period) => `<option value="${period.id}" ${task.scheduledPeriod === period.id ? "selected" : ""}>${escapeHtml(period.label)}</option>`).join("")}
+          </select>
+        </label>
+      </div>
+      <div class="toolbar-row">
+        <button class="ghost-button small" data-action="open-editor" data-kind="task" data-id="${task.id}">Editar</button>
+        <button class="ghost-button small" data-task-action="today" data-task-id="${task.id}">Hoje</button>
+      </div>
+    </article>
   `;
 }
 
@@ -1240,36 +1344,30 @@ function renderDaysPage(model) {
 function renderInboxPage(model) {
   return `
     <section class="page-grid two">
-      ${panel("Nova captura", `
-        <div class="toolbar-row">
-          ${renderVoiceCaptureButton("Nova tarefa falada", "inbox")}
-          <span class="muted-copy">Fale, revise e mande para a mesma Inbox do app.</span>
-        </div>
-        <form class="form-grid" data-form="capture-task">
-          <label class="field"><span>Titulo</span><input name="title" required /></label>
-          <div class="field-grid two">
-            <label class="field"><span>Area</span><select name="areaId">${model.options.areas.map((area) => `<option value="${area.id}">${escapeHtml(area.name)}</option>`).join("")}</select></label>
-            <label class="field"><span>Projeto</span><select name="projectId"><option value="">Sem projeto</option>${model.options.projects.map((project) => `<option value="${project.id}">${escapeHtml(project.name)}</option>`).join("")}</select></label>
+      ${panel("Captura simples", `
+        <div class="simple-capture-shell">
+          <div class="callout success">
+            <strong>Entrada = captura, nao preenchimento.</strong>
+            <p>Voce joga a tarefa aqui. O sistema interpreta area, projeto, urgencia, possivel proxima acao e empurra para Priorizar e Organizar.</p>
           </div>
-          <div class="field-grid three">
-            <label class="field"><span>Prazo</span><input type="date" name="dueDate" /></label>
-            <label class="field"><span>Duracao</span><input type="number" name="estimatedMinutes" min="5" value="30" /></label>
-            <label class="field"><span>Contexto</span><select name="context">${model.options.contexts.map((context) => `<option value="${context}">${escapeHtml(context)}</option>`).join("")}</select></label>
-          </div>
-          <label class="field">
-            <span>Checklist / proximas acoes</span>
-            <textarea name="checklist" placeholder="Uma linha por item&#10;Ex: abrir planilha&#10;validar valores&#10;enviar resposta"></textarea>
-          </label>
-          <label class="field"><span>Observacao opcional</span><textarea name="notes" placeholder="Contexto extra, se precisar."></textarea></label>
-          <button class="primary-button" type="submit">Adicionar na entrada</button>
-        </form>
-      `)}
-      ${panel("Inbox", `
-        <div class="callout success">
-          <strong>Capturar primeiro, organizar depois.</strong>
-          <p>O checklist vira base de proxima acao e ajuda a priorizacao automatica.</p>
+          <form class="simple-capture-form" data-form="capture-task">
+            <label class="field">
+              <span>Solte a tarefa aqui</span>
+              <input name="title" placeholder="Ex: revisar proposta da assessoria amanha e enviar para o cliente" required />
+            </label>
+            <div class="toolbar-row">
+              ${renderVoiceCaptureButton("Microfone", "inbox")}
+              <button class="primary-button" type="submit">Enviar para organizar</button>
+            </div>
+          </form>
         </div>
-        ${taskList(model.inbox, { empty: "Inbox limpa. Capture com poucas friccoes." })}
+      `, { wide: true })}
+      ${panel("Ultimas capturas", `
+        <div class="meta-row">${metaPills([
+          `${model.inbox.counts.captured} em organizacao`,
+          `${model.inbox.counts.raw} ainda na inbox bruta`,
+        ])}</div>
+        ${taskList(model.inbox.recent, { empty: "Sem capturas recentes. Use o campo acima ou o microfone." })}
       `)}
     </section>
   `;
@@ -1343,7 +1441,7 @@ function renderOrganizePage(model, options = {}) {
         ${model.organize.map((bucket) => panel(bucket.label, `
           <div class="stack-list compact-stack">
             ${bucket.tasks.length
-              ? bucket.tasks.map((task) => renderOrganizeTaskCard(task, { buckets: model.options.buckets })).join("")
+              ? bucket.tasks.map((task) => renderOrganizeTaskCard(task, { buckets: model.options.buckets, periods: model.options.periods })).join("")
               : emptyState("Sem tarefas nesta secao.")}
           </div>
         `, { badge: `${bucket.tasks.length}` }))}
@@ -1360,10 +1458,10 @@ function renderOrganizePage(model, options = {}) {
               <h3>${escapeHtml(bucket.label)}</h3>
               ${badge(`${bucket.tasks.length}`)}
             </div>
-            <p class="muted-copy">Arraste tarefas entre as caixas ou use os botoes dentro do card.</p>
+            <p class="muted-copy">Aqui e a decisao final: ajuste bucket, destrinche em checklist e pre-agende antes de mandar para a Agenda.</p>
             <div class="stack-list compact-stack">
               ${bucket.tasks.length
-                ? bucket.tasks.map((task) => renderOrganizeTaskCard(task, { buckets: model.options.buckets })).join("")
+                ? bucket.tasks.map((task) => renderOrganizeTaskCard(task, { buckets: model.options.buckets, periods: model.options.periods })).join("")
                 : emptyState("Sem tarefas nesta coluna.")}
             </div>
           </article>
@@ -1378,8 +1476,8 @@ function renderOrganizePage(model, options = {}) {
         ${metricCard("Backlog", String(model.organize.find((bucket) => bucket.id === "backlog")?.tasks.length || 0), "Precisa de limpeza continua")}
       </div>
       <div class="callout">
-        <strong>Complexo por tras, simples na frente.</strong>
-        <p>As tarefas chegam aqui processadas pela priorizacao automatica. Esta tela serve para o ajuste final do fluxo de execucao.</p>
+        <strong>Organizar = ajuste final antes da semana.</strong>
+        <p>A Entrada captura, o motor interpreta e esta tela fica com a decisao humana final: revisar, destrinchar, agendar e mandar para a Agenda.</p>
       </div>
     `, model, { wide: true }),
   };
@@ -1443,6 +1541,7 @@ function renderRoutinePage(model) {
     calendar: layoutCard("routine", "calendar", "Calendario simples dos habitos", `
       <div class="stack-list compact-stack">
         ${model.routine.habits.map((habit) => renderHabitWeekMatrixCard(habit, model.selectedDate)).join("") || emptyState("Sem habitos para acompanhar por semana.")}
+        ${model.routine.workoutTracker ? renderWeeklyTracker(model.routine.workoutTracker) : ""}
       </div>
     `, model),
     energy: layoutCard("routine", "energy", "Energia e saude da semana", `
@@ -1458,6 +1557,10 @@ function renderRoutinePage(model) {
           </label>
         `).join("") || emptyState("Sem checklist de saude por aqui.")}
       </div>
+      <div class="stack-list compact-stack">
+        ${model.routine.careTrackers.map((tracker) => renderWeeklyTracker(tracker)).join("") || ""}
+        ${model.routine.routineTrackers.map((tracker) => renderWeeklyTracker(tracker, { showSummary: false })).join("") || ""}
+      </div>
       ${taskList(model.routine.healthTasks, { empty: "Sem tarefas de saude nesta semana." })}
     `, model, { wide: true }),
   };
@@ -1468,7 +1571,35 @@ function renderRoutinePage(model) {
 function renderPlanningPage(model) {
   return `
     <section class="page-grid two">
-      ${panel("Sprint atual", model.planning.currentSprint ? `<div class="reading-card"><strong>${escapeHtml(model.planning.currentSprint.title)}</strong><p>${escapeHtml(model.planning.currentSprint.theme)}</p><div class="meta-row">${metaPills(model.planning.currentSprint.keyResults)}</div></div>` : emptyState("Sem sprint atual."), { wide: true })}
+      ${panel("Sprints do ano", `
+        <div class="callout success">
+          <strong>${model.planning.currentSprint ? escapeHtml(model.planning.currentSprint.title) : "Sem sprint atual"}</strong>
+          <p>A linha de raciocinio e o sprint atual influenciam automaticamente a prioridade das tarefas capturadas na Entrada.</p>
+        </div>
+        <div class="stack-list compact-stack">
+          ${model.planning.sprints.map((sprint) => `
+            <article class="reading-card sprint-card ${sprint.status === "current" ? "active" : ""}">
+              <div class="task-card-top">
+                <div>
+                  <div class="meta-row">${metaPills([`Sprint ${sprint.slot}`, sprint.periodLabel, sprint.status === "current" ? "Atual" : sprint.status === "upcoming" ? "Proximo" : "Planejado"])}</div>
+                  <strong>${escapeHtml(sprint.title)}</strong>
+                  <p>${escapeHtml(sprint.description || sprint.theme || "Sem descricao ainda.")}</p>
+                </div>
+                ${badge(sprint.status === "current" ? "Ativo" : "Livre", sprint.status === "current" ? "success" : "")}
+              </div>
+              ${sprint.priorities?.length ? `<div class="meta-row">${metaPills(sprint.priorities)}</div>` : ""}
+              <div class="meta-row">${metaPills([
+                sprint.projectNames?.length ? `Projetos: ${sprint.projectNames.join(", ")}` : "",
+                sprint.objectiveTitles?.length ? `Objetivos: ${sprint.objectiveTitles.length}` : "",
+              ])}</div>
+              <div class="toolbar-row">
+                <button class="secondary-button" data-action="set-active-sprint" data-sprint-id="${sprint.id}">Marcar como atual</button>
+                <button class="ghost-button" data-action="open-editor" data-kind="sprint" data-id="${sprint.id}">Editar sprint</button>
+              </div>
+            </article>
+          `).join("")}
+        </div>
+      `, { wide: true })}
       ${panel("Objetivos", `<div class="stack-list compact-stack">${model.planning.objectives.map((objective) => `<article class="goal-row"><div><strong>${escapeHtml(objective.title)}</strong><p>${escapeHtml(objective.description)}</p></div><div class="goal-meter">${progressBar(objective.progress)}<span>${objective.progress}%</span></div></article>`).join("")}</div>`)}
       ${panel("Backlog", taskList(model.planning.backlog, { empty: "Backlog limpo." }))}
       ${panel("Modelos", taskList(model.planning.templates, { empty: "Sem modelos ainda." }))}
@@ -1534,6 +1665,9 @@ function renderHealthPage(model) {
             </div>
           </article>
         `).join("") || emptyState("Sem itens de cuidado ainda.")}
+      </div>
+      <div class="stack-list compact-stack">
+        ${model.health.careTrackers.map((tracker) => renderWeeklyTracker(tracker)).join("") || ""}
       </div>
     `, model),
     diet: layoutCard("health", "diet", "Dieta e refeicoes", `
@@ -1601,6 +1735,7 @@ function renderHealthPage(model) {
       <div class="stack-list compact-stack">
         ${model.health.workouts.map((entry) => `<article class="summary-row"><div><strong>${escapeHtml(entry.title)}</strong><p>${escapeHtml(entry.date)} • ${escapeHtml(entry.type)} • ${entry.duration} min</p></div><button class="ghost-button small" data-action="open-editor" data-kind="health-workout" data-id="${entry.id}">Editar</button></article>`).join("") || emptyState("Sem treinos registrados ainda.")}
       </div>
+      ${model.health.workoutTracker ? renderWeeklyTracker(model.health.workoutTracker) : ""}
       ${taskList(model.health.healthTasks, { empty: "Sem tarefas de saude em aberto." })}
     `, model),
     evolution: layoutCard("health", "evolution", "Evolucao simples", `
@@ -1630,35 +1765,48 @@ function renderHealthPage(model) {
 
 function renderAgendaPage(model) {
   const cards = {
-    week: layoutCard("agenda", "week", "Semana editavel", `
-      <div class="week-calendar-grid">
+    week: layoutCard("agenda", "week", "Kanban semanal editavel", `
+      <div class="callout success">
+        <strong>Arraste tarefas entre os dias.</strong>
+        <p>O dia da tarefa muda aqui e o resto do sistema acompanha automaticamente: Hoje, Organizar e leitura de carga semanal.</p>
+      </div>
+      <div class="agenda-kanban-grid">
         ${model.agenda.days.map((day) => `
-          <article class="calendar-day-column">
+          <article class="calendar-day-column agenda-day-drop-zone" data-agenda-date="${day.date}">
             <div class="calendar-day-head">
-              <strong>${escapeHtml(day.weekdayLabel.slice(0, 3))}</strong>
+              <strong>${escapeHtml(day.weekdayLabel)}</strong>
               <span>${escapeHtml(day.shortLabel)}</span>
             </div>
             <div class="meta-row">${metaPills([day.type.label, `${day.totalLoad}/${day.totalCapacity} min`, `${day.alerts} alerta(s)`])}</div>
-            <div class="calendar-events">
-              ${day.timeline.map((entry) => `<div class="calendar-event ${entry.source}"><small>${escapeHtml(entry.startTime)} - ${escapeHtml(entry.endTime)}</small><strong>${escapeHtml(entry.title)}</strong></div>`).join("") || "<small>Dia vazio</small>"}
+            <div class="agenda-day-stack">
+              ${day.tasks.length
+                ? day.tasks.map((task) => renderAgendaKanbanTask(task, model)).join("")
+                : emptyState("Dia livre para encaixar algo.")}
+              ${day.blocks?.length ? `<div class="calendar-events">${day.blocks.map((entry) => `<div class="calendar-event internal"><small>${escapeHtml(entry.startTime)} - ${escapeHtml(entry.endTime)}</small><strong>${escapeHtml(entry.title)}</strong></div>`).join("")}</div>` : ""}
             </div>
           </article>
         `).join("")}
       </div>
     `, model, { wide: true }),
-    editor: layoutCard("agenda", "editor", "Editar semana e blocos", `
+    editor: layoutCard("agenda", "editor", "Fila para encaixar e blocos", `
       <div class="reading-card">
         <div class="panel-head">
           <div>
             <strong>${escapeHtml(model.selectedDay.longLabel)}</strong>
-            <p>Edite tarefas e blocos sem sair da leitura da semana.</p>
+            <p>O que ainda nao tem dia claro pode ser refinado aqui e depois arrastado para a semana.</p>
           </div>
           <div class="meta-row">${metaPills([model.selectedDay.type.label, `${model.selectedDay.totalLoad}/${model.selectedDay.totalCapacity} min`])}</div>
         </div>
       </div>
       <div class="page-grid two">
-        ${panel("Tarefas do dia", renderAgendaTaskEditor(model.agenda.editor.tasks, model))}
-        ${panel("Blocos internos", renderAgendaBlockEditor(model.agenda.editor.blocks, model))}
+        ${panel("Sem dia definido", `
+          <div class="stack-list compact-stack">
+            ${model.agenda.unscheduled.length
+              ? model.agenda.unscheduled.map((task) => renderAgendaKanbanTask(task, model)).join("")
+              : emptyState("Nada pendente para encaixar na semana.")}
+          </div>
+        `)}
+        ${panel("Blocos do dia selecionado", renderAgendaBlockEditor(model.agenda.days.find((day) => day.date === model.selectedDate)?.blocks || [], model))}
       </div>
       ${panel("Google Calendar", `<form class="form-grid" data-form="google-config"><label class="field"><span>Client ID</span><input name="clientId" value="${escapeHtml(model.agenda.google.clientId || "")}" /></label><label class="field"><span>API Key</span><input name="apiKey" value="${escapeHtml(model.agenda.google.apiKey || "")}" /></label><label class="field"><span>Calendar ID</span><input name="calendarId" value="${escapeHtml(model.agenda.google.calendarId || "primary")}" /></label><div class="toolbar-row"><button class="primary-button" type="submit">Salvar</button><button class="secondary-button" type="button" data-action="connect-google">Conectar Google</button><button class="ghost-button" type="button" data-action="sync-google">Sincronizar blocos</button></div></form><p class="muted-copy">Status: ${model.agenda.connected ? "conectado" : "nao conectado"}</p>`)}
     `, model, { wide: true }),
@@ -1751,17 +1899,19 @@ function renderEditorModal(editorView, options) {
   const areaOptions = options.areas.map((area) => `<option value="${area.id}" ${entity.areaId === area.id ? "selected" : ""}>${escapeHtml(area.name)}</option>`).join("");
   const projectOptions = options.projects.map((project) => `<option value="${project.id}" ${entity.projectId === project.id ? "selected" : ""}>${escapeHtml(project.name)}</option>`).join("");
   const objectiveOptions = options.objectives.map((objective) => `<option value="${objective.id}" ${entity.objectiveId === objective.id ? "selected" : ""}>${escapeHtml(objective.title)}</option>`).join("");
+  const sprintOptions = options.sprints.map((sprint) => `<option value="${sprint.id}" ${entity.sprintId === sprint.id ? "selected" : ""}>${escapeHtml(sprint.title)}</option>`).join("");
   const dayTypeOptions = options.dayTypes.map((type) => `<option value="${type.id}" ${entity.typeId === type.id ? "selected" : ""}>${escapeHtml(type.label)}</option>`).join("");
   const periodOptions = options.periods.map((period) => `<option value="${period.id}" ${entity.scheduledPeriod === period.id || entity.period === period.id ? "selected" : ""}>${escapeHtml(period.label)}</option>`).join("");
   const bucketOptions = options.buckets.map((bucket) => `<option value="${bucket.id}" ${entity.finalBucket === bucket.id ? "selected" : ""}>${escapeHtml(bucket.label)}</option>`).join("");
   const gtdOptions = ["Processar", "Executar", "Agendar", "Delegar", "Aguardar", "Backlog", "Projeto", "Descartar", "Modelo"].map((decision) => `<option value="${decision}" ${entity.gtdDecision === decision ? "selected" : ""}>${escapeHtml(decision)}</option>`).join("");
   const actions = entity.id ? `<div class="toolbar-row"><button class="ghost-button" type="button" data-action="duplicate-entity" data-kind="${kind}" data-id="${entity.id}">Duplicar</button><button class="ghost-button danger" type="button" data-action="delete-entity" data-kind="${kind}" data-id="${entity.id}">Excluir</button></div>` : "";
-  const taskFields = `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" required /></label><label class="field"><span>Checklist / proximas acoes</span><textarea name="subtasks">${escapeHtml((entity.subtasks || []).join("\n"))}</textarea></label><div class="field-grid two"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Projeto</span><select name="projectId"><option value="">Sem projeto</option>${projectOptions}</select></label></div><div class="field-grid two"><label class="field"><span>Objetivo</span><select name="objectiveId"><option value="">Sem objetivo</option>${objectiveOptions}</select></label><label class="field"><span>Contexto</span><input name="context" value="${escapeHtml(entity.context || "")}" /></label></div><div class="field-grid four"><label class="field"><span>Periodo</span><select name="scheduledPeriod">${periodOptions}</select></label><label class="field"><span>Prioridade</span><input name="priority" value="${escapeHtml(entity.priority || "medium")}" /></label><label class="field"><span>Impacto</span><input type="number" name="impact" value="${escapeHtml(entity.impact || 3)}" /></label><label class="field"><span>Urgencia</span><input type="number" name="urgency" value="${escapeHtml(entity.urgency || 3)}" /></label></div><div class="field-grid four"><label class="field"><span>Esforco</span><input type="number" name="effort" value="${escapeHtml(entity.effort || 3)}" /></label><label class="field"><span>Duracao</span><input type="number" name="estimatedMinutes" value="${escapeHtml(entity.estimatedMinutes || 30)}" /></label><label class="field"><span>GTD</span><select name="gtdDecision"><option value="">Automatica</option>${gtdOptions}</select></label><label class="field"><span>Bucket</span><select name="finalBucket"><option value="">Automatico</option>${bucketOptions}</select></label></div><div class="field-grid four"><label class="field"><span>Modo de prioridade</span><select name="priorityMode"><option value="auto" ${entity.priorityMode !== "manual" ? "selected" : ""}>Automatica</option><option value="manual" ${entity.priorityMode === "manual" ? "selected" : ""}>Manual</option></select></label><label class="field"><span>Dia</span><input type="date" name="scheduledDate" value="${escapeHtml(entity.scheduledDate || "")}" /></label><label class="field"><span>Prazo</span><input type="date" name="dueDate" value="${escapeHtml(entity.dueDate || "")}" /></label><label class="field"><span>Ajuste de score</span><input type="number" name="scoreAdjustment" value="${escapeHtml(entity.scoreAdjustment || 0)}" /></label></div><label class="field"><span>Proxima acao</span><textarea name="nextAction">${escapeHtml(entity.nextAction || "")}</textarea></label><label class="field"><span>Observacoes</span><textarea name="notes">${escapeHtml(entity.notes || "")}</textarea></label><div class="checkbox-row"><label><input type="checkbox" name="critical" ${entity.critical ? "checked" : ""}/> Critica</label><label><input type="checkbox" name="delegable" ${entity.delegable ? "checked" : ""}/> Delegavel</label><label><input type="checkbox" name="isRecurring" ${entity.isRecurring ? "checked" : ""}/> Recorrente</label><label><input type="checkbox" name="isTemplate" ${entity.isTemplate ? "checked" : ""}/> Modelo</label><label><input type="checkbox" name="manualDecision" ${entity.manualDecision ? "checked" : ""}/> Decisao manual</label></div>`;
+  const taskFields = `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" required /></label><label class="field"><span>Checklist / proximas acoes</span><textarea name="subtasks">${escapeHtml((entity.subtasks || []).join("\n"))}</textarea></label><div class="field-grid two"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Projeto</span><select name="projectId"><option value="">Sem projeto</option>${projectOptions}</select></label></div><div class="field-grid three"><label class="field"><span>Objetivo</span><select name="objectiveId"><option value="">Sem objetivo</option>${objectiveOptions}</select></label><label class="field"><span>Sprint</span><select name="sprintId"><option value="">Sem sprint</option>${sprintOptions}</select></label><label class="field"><span>Contexto</span><input name="context" value="${escapeHtml(entity.context || "")}" /></label></div><div class="field-grid four"><label class="field"><span>Periodo</span><select name="scheduledPeriod">${periodOptions}</select></label><label class="field"><span>Prioridade</span><input name="priority" value="${escapeHtml(entity.priority || "medium")}" /></label><label class="field"><span>Impacto</span><input type="number" name="impact" value="${escapeHtml(entity.impact || 3)}" /></label><label class="field"><span>Urgencia</span><input type="number" name="urgency" value="${escapeHtml(entity.urgency || 3)}" /></label></div><div class="field-grid four"><label class="field"><span>Esforco</span><input type="number" name="effort" value="${escapeHtml(entity.effort || 3)}" /></label><label class="field"><span>Duracao</span><input type="number" name="estimatedMinutes" value="${escapeHtml(entity.estimatedMinutes || 30)}" /></label><label class="field"><span>GTD</span><select name="gtdDecision"><option value="">Automatica</option>${gtdOptions}</select></label><label class="field"><span>Bucket</span><select name="finalBucket"><option value="">Automatico</option>${bucketOptions}</select></label></div><div class="field-grid four"><label class="field"><span>Modo de prioridade</span><select name="priorityMode"><option value="auto" ${entity.priorityMode !== "manual" ? "selected" : ""}>Automatica</option><option value="manual" ${entity.priorityMode === "manual" ? "selected" : ""}>Manual</option></select></label><label class="field"><span>Dia</span><input type="date" name="scheduledDate" value="${escapeHtml(entity.scheduledDate || "")}" /></label><label class="field"><span>Prazo</span><input type="date" name="dueDate" value="${escapeHtml(entity.dueDate || "")}" /></label><label class="field"><span>Ajuste de score</span><input type="number" name="scoreAdjustment" value="${escapeHtml(entity.scoreAdjustment || 0)}" /></label></div><label class="field"><span>Proxima acao</span><textarea name="nextAction">${escapeHtml(entity.nextAction || "")}</textarea></label><label class="field"><span>Observacoes</span><textarea name="notes">${escapeHtml(entity.notes || "")}</textarea></label><div class="checkbox-row"><label><input type="checkbox" name="critical" ${entity.critical ? "checked" : ""}/> Critica</label><label><input type="checkbox" name="delegable" ${entity.delegable ? "checked" : ""}/> Delegavel</label><label><input type="checkbox" name="isRecurring" ${entity.isRecurring ? "checked" : ""}/> Recorrente</label><label><input type="checkbox" name="isTemplate" ${entity.isTemplate ? "checked" : ""}/> Modelo</label><label><input type="checkbox" name="manualDecision" ${entity.manualDecision ? "checked" : ""}/> Decisao manual</label></div>`;
   const fieldMap = {
     task: taskFields,
     area: `<label class="field"><span>Nome</span><input name="name" value="${escapeHtml(entity.name || "")}" /></label><div class="field-grid two"><label class="field"><span>Tipo</span><input name="type" value="${escapeHtml(entity.type || "life")}" /></label><label class="field"><span>Cor</span><input name="color" value="${escapeHtml(entity.color || "")}" /></label></div><label class="field"><span>Descricao</span><textarea name="description">${escapeHtml(entity.description || "")}</textarea></label>`,
     project: `<label class="field"><span>Nome</span><input name="name" value="${escapeHtml(entity.name || "")}" /></label><div class="field-grid two"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Status</span><input name="status" value="${escapeHtml(entity.status || "active")}" /></label></div><label class="field"><span>Resumo</span><textarea name="summary">${escapeHtml(entity.summary || "")}</textarea></label>`,
     objective: `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><div class="field-grid three"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Projeto</span><select name="projectId"><option value="">Sem projeto</option>${projectOptions}</select></label><label class="field"><span>Progresso</span><input type="number" name="progress" value="${escapeHtml(entity.progress || 0)}" /></label></div><label class="field"><span>Prazo</span><input type="date" name="dueDate" value="${escapeHtml(entity.dueDate || "")}" /></label><label class="field"><span>Descricao</span><textarea name="description">${escapeHtml(entity.description || "")}</textarea></label>`,
+    sprint: `<div class="field-grid two"><label class="field"><span>Nome</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><label class="field"><span>Slot</span><select name="slot">${[1, 2, 3, 4].map((slot) => `<option value="${slot}" ${Number(entity.slot) === slot ? "selected" : ""}>Sprint ${slot}</option>`).join("")}</select></label></div><div class="field-grid three"><label class="field"><span>Inicio</span><input type="date" name="startDate" value="${escapeHtml(entity.startDate || "")}" /></label><label class="field"><span>Fim</span><input type="date" name="endDate" value="${escapeHtml(entity.endDate || "")}" /></label><label class="field"><span>Status</span><select name="status"><option value="planned" ${entity.status === "planned" ? "selected" : ""}>Planejado</option><option value="upcoming" ${entity.status === "upcoming" ? "selected" : ""}>Proximo</option><option value="current" ${entity.status === "current" ? "selected" : ""}>Atual</option></select></label></div><label class="field"><span>Periodo</span><input name="periodLabel" value="${escapeHtml(entity.periodLabel || "")}" /></label><label class="field"><span>Descricao</span><textarea name="description">${escapeHtml(entity.description || entity.theme || "")}</textarea></label><label class="field"><span>Prioridades do sprint</span><textarea name="priorities">${escapeHtml((entity.priorities || []).join("\n"))}</textarea></label><label class="field"><span>Projetos relacionados</span><textarea name="projectIds">${escapeHtml((entity.projectIds || []).join("\n"))}</textarea></label><label class="field"><span>Objetivos relacionados</span><textarea name="objectiveIds">${escapeHtml((entity.objectiveIds || []).join("\n"))}</textarea></label><label class="field"><span>Palavras-chave do sprint</span><textarea name="keywords">${escapeHtml((entity.keywords || []).join("\n"))}</textarea></label><label class="field"><span>Areas priorizadas</span><textarea name="priorityAreas">${escapeHtml((entity.priorityAreas || []).join("\n"))}</textarea></label>`,
     habit: `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><div class="field-grid two"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Meta semanal</span><input type="number" name="targetPerWeek" value="${escapeHtml(entity.targetPerWeek || 3)}" /></label></div><label class="field"><span>Dias preferidos</span><input name="preferredWeekdays" value="${escapeHtml((entity.preferredWeekdays || []).join(", "))}" /></label><label class="field"><span>Nota</span><textarea name="note">${escapeHtml(entity.note || "")}</textarea></label>`,
     block: `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><div class="field-grid three"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Data</span><input type="date" name="date" value="${escapeHtml(entity.date || "")}" /></label><label class="field"><span>Periodo</span><select name="period">${periodOptions}</select></label></div><div class="field-grid two"><label class="field"><span>Inicio</span><input type="time" name="startTime" value="${escapeHtml(entity.startTime || "09:00")}" /></label><label class="field"><span>Fim</span><input type="time" name="endTime" value="${escapeHtml(entity.endTime || "10:00")}" /></label></div><label class="field"><span>Tipo</span><input name="kind" value="${escapeHtml(entity.kind || "routine")}" /></label><label class="field"><span>Nota</span><textarea name="note">${escapeHtml(entity.note || "")}</textarea></label>`,
     routine: `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><div class="field-grid three"><label class="field"><span>Periodo</span><select name="period">${periodOptions}</select></label><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Ordem</span><input type="number" name="order" value="${escapeHtml(entity.order || 1)}" /></label></div><label class="field"><span>Nota</span><textarea name="note">${escapeHtml(entity.note || "")}</textarea></label><div class="checkbox-row"><label><input type="checkbox" name="active" ${entity.active ? "checked" : ""}/> Ativo</label><label><input type="checkbox" name="recurring" ${entity.recurring ? "checked" : ""}/> Recorrente</label></div>`,
@@ -2059,8 +2209,9 @@ export class LifeOSApp {
     const today = formatISODate(new Date());
 
     if (trigger.dataset.taskAction) {
+      const taskTitle = this.state.tasks.find((task) => task.id === trigger.dataset.taskId)?.title || "";
       this.state = applyTaskAction(this.state, trigger.dataset.taskId, trigger.dataset.taskAction, {}, this.state.ui.selectedDate || today);
-      await this.persist("Tarefa atualizada.");
+      await this.persist(getTaskActionMessage(trigger.dataset.taskAction, taskTitle));
       return;
     }
 
@@ -2079,13 +2230,40 @@ export class LifeOSApp {
     if (action === "set-filter") { this.state = setFilter(this.state, trigger.dataset.filterName, trigger.dataset.filterValue); await this.persist(); return; }
     if (action === "clear-filters") { this.state = clearFilters(this.state); await this.persist("Filtros limpos."); return; }
     if (action === "set-priority-method") { this.state = setPriorityMethod(this.state, trigger.dataset.method); await this.persist("Metodo atualizado."); return; }
+    if (action === "set-active-sprint") { this.state = setActiveSprint(this.state, trigger.dataset.sprintId); await this.persist("Sprint atualizada."); return; }
     if (action === "set-energy") { this.state = setWeeklyEnergy(this.state, trigger.dataset.energy); await this.persist("Energia semanal ajustada."); return; }
     if (action === "toggle-habit") { this.state = toggleHabitForDate(this.state, trigger.dataset.habitId, trigger.dataset.date || today); await this.persist("Habito atualizado."); return; }
-    if (action === "toggle-habit-inline") { this.state = toggleHabitForDate(this.state, trigger.dataset.habitId, trigger.dataset.date || today); await this.persist("Checklist do dia atualizado."); return; }
-    if (action === "toggle-routine-inline") { this.state = toggleRoutineForDate(this.state, trigger.dataset.routineId, trigger.dataset.date || today); await this.persist("Rotina do dia atualizada."); return; }
-    if (action === "toggle-care-inline") { this.state = toggleHealthCareForDate(this.state, trigger.dataset.careId, trigger.dataset.date || today); await this.persist("Checklist de saude atualizado."); return; }
-    if (action === "toggle-diet-inline") { this.state = toggleDietMealForDate(this.state, trigger.dataset.dietId, trigger.dataset.date || today); await this.persist("Dieta do dia atualizada."); return; }
-    if (action === "toggle-task-subtask") { this.state = toggleTaskSubtask(this.state, trigger.dataset.taskId, trigger.dataset.subtaskIndex); await this.persist("Checklist da tarefa atualizado."); return; }
+    if (action === "toggle-habit-inline") {
+      const habitTitle = this.state.habits.find((item) => item.id === trigger.dataset.habitId)?.title || "";
+      this.state = toggleHabitForDate(this.state, trigger.dataset.habitId, trigger.dataset.date || today);
+      await this.persist(habitTitle ? `Habito atualizado: ${habitTitle}.` : "Habito atualizado.");
+      return;
+    }
+    if (action === "toggle-routine-inline") {
+      const routineItems = [...(this.state.routines.morning || []), ...(this.state.routines.night || [])];
+      const routineTitle = routineItems.find((item) => item.id === trigger.dataset.routineId)?.title || "";
+      this.state = toggleRoutineForDate(this.state, trigger.dataset.routineId, trigger.dataset.date || today);
+      await this.persist(routineTitle ? `Checklist de rotina atualizado: ${routineTitle}.` : "Checklist de rotina atualizado.");
+      return;
+    }
+    if (action === "toggle-care-inline") {
+      const careTitle = this.state.health.careItems.find((item) => item.id === trigger.dataset.careId)?.title || "";
+      this.state = toggleHealthCareForDate(this.state, trigger.dataset.careId, trigger.dataset.date || today);
+      await this.persist(careTitle ? `Checklist de saude atualizado: ${careTitle}.` : "Checklist de saude atualizado.");
+      return;
+    }
+    if (action === "toggle-diet-inline") {
+      const dietTitle = this.state.health.dietMeals.find((item) => item.id === trigger.dataset.dietId)?.title || "";
+      this.state = toggleDietMealForDate(this.state, trigger.dataset.dietId, trigger.dataset.date || today);
+      await this.persist(dietTitle ? `Dieta do dia atualizada: ${dietTitle}.` : "Dieta do dia atualizada.");
+      return;
+    }
+    if (action === "toggle-task-subtask") {
+      const taskTitle = this.state.tasks.find((task) => task.id === trigger.dataset.taskId)?.title || "";
+      this.state = toggleTaskSubtask(this.state, trigger.dataset.taskId, trigger.dataset.subtaskIndex);
+      await this.persist(taskTitle ? `Checklist da tarefa atualizado: ${taskTitle}.` : "Checklist da tarefa atualizado.");
+      return;
+    }
     if (action === "move-task-bucket") { this.state = moveTaskToBucket(this.state, trigger.dataset.taskId, trigger.dataset.bucketId); await this.persist("Fluxo da tarefa atualizado."); return; }
     if (action === "open-editor") { this.state = openEditor(this.state, trigger.dataset.kind, trigger.dataset.id || ""); this.render(); return; }
     if (action === "close-editor" || action === "close-editor-backdrop") { if (action === "close-editor-backdrop" && event.target !== trigger) return; this.state = closeEditor(this.state); this.render(); return; }
@@ -2138,6 +2316,11 @@ export class LifeOSApp {
     if (target.dataset.filter) { this.state = setFilter(this.state, target.dataset.filter, target.value); await this.persist(); return; }
     if (target.dataset.dayTypeDate) { const result = setDayType(this.state, target.dataset.dayTypeDate, target.value); this.state = result.nextState; await this.persist(`Dia recalculado: ${result.movedCount} movidas, ${result.alertCount} alertas.`); return; }
     if (target.dataset.periodTypeDate) { const result = setDayPeriodType(this.state, target.dataset.periodTypeDate, target.dataset.periodId, target.value); this.state = result.nextState; await this.persist(`Periodo recalculado: ${result.movedCount} movidas, ${result.alertCount} alertas.`); return; }
+    if (target.dataset.organizeTaskId) {
+      this.state = updateTaskSchedule(this.state, target.dataset.organizeTaskId, { [target.dataset.organizeField]: target.value });
+      await this.persist("Pre-agendamento atualizado.");
+      return;
+    }
     if (target.dataset.agendaTaskId) {
       this.state = updateTaskSchedule(this.state, target.dataset.agendaTaskId, { [target.dataset.agendaField]: target.value });
       await this.persist("Agenda da tarefa atualizada.");
@@ -2153,7 +2336,14 @@ export class LifeOSApp {
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
     event.preventDefault();
-    if (form.dataset.form === "capture-task") { this.state = addInboxTask(this.state, formDataToObject(form)); form.reset(); await this.persist("Nova tarefa capturada na inbox."); return; }
+    if (form.dataset.form === "capture-task") {
+      const payload = formDataToObject(form);
+      const result = captureInboxTask(this.state, payload.title || "", this.state.ui.selectedDate || formatISODate(new Date()));
+      this.state = setActiveSection(result.nextState, "organize");
+      form.reset();
+      await this.persist(result.message);
+      return;
+    }
     if (form.dataset.form === "checklist-quick-add") { this.state = addChecklistTask(this.state, formDataToObject(form)); form.reset(); await this.persist("Nova tarefa criada na checklist."); return; }
     if (form.dataset.form === "voice-capture-confirm") {
       const payload = formDataToObject(form);
@@ -2198,6 +2388,14 @@ export class LifeOSApp {
       return;
     }
 
+    const agendaTask = event.target.closest("[data-agenda-task]");
+    if (agendaTask) {
+      this.dragItem = { kind: "agenda-task", taskId: agendaTask.dataset.agendaTask };
+      agendaTask.classList.add("dragging");
+      event.dataTransfer.effectAllowed = "move";
+      return;
+    }
+
     const item = event.target.closest("[data-layout-card]");
     if (!item || !this.state?.settings?.editMode || !this.state?.settings?.layoutCapabilities?.dragEnabled) return;
     this.dragItem = { kind: "layout", page: item.dataset.layoutPage, cardId: item.dataset.layoutCard };
@@ -2229,6 +2427,15 @@ export class LifeOSApp {
       event.preventDefault();
       this.root.querySelectorAll(".organize-drop-zone.drag-target").forEach((entry) => entry.classList.remove("drag-target"));
       bucket.classList.add("drag-target");
+      return;
+    }
+
+    if (this.dragItem.kind === "agenda-task") {
+      const day = event.target.closest("[data-agenda-date]");
+      if (!day) return;
+      event.preventDefault();
+      this.root.querySelectorAll(".agenda-day-drop-zone.drag-target").forEach((entry) => entry.classList.remove("drag-target"));
+      day.classList.add("drag-target");
     }
   }
 
@@ -2269,6 +2476,16 @@ export class LifeOSApp {
       return;
     }
 
+    if (this.dragItem.kind === "agenda-task") {
+      const day = event.target.closest("[data-agenda-date]");
+      if (!day) return;
+      this.state = updateTaskSchedule(this.state, this.dragItem.taskId, { scheduledDate: day.dataset.agendaDate });
+      this.root.querySelectorAll(".agenda-day-drop-zone.drag-target").forEach((entry) => entry.classList.remove("drag-target"));
+      this.dragItem = null;
+      await this.persist("Tarefa movida na agenda semanal.");
+      return;
+    }
+
     this.dragItem = null;
   }
 
@@ -2279,6 +2496,8 @@ export class LifeOSApp {
     this.root.querySelectorAll(".checklist-row.drag-target").forEach((card) => card.classList.remove("drag-target"));
     this.root.querySelectorAll("[data-organize-task].dragging").forEach((card) => card.classList.remove("dragging"));
     this.root.querySelectorAll(".organize-drop-zone.drag-target").forEach((card) => card.classList.remove("drag-target"));
+    this.root.querySelectorAll("[data-agenda-task].dragging").forEach((card) => card.classList.remove("dragging"));
+    this.root.querySelectorAll(".agenda-day-drop-zone.drag-target").forEach((card) => card.classList.remove("drag-target"));
   }
 
   async handleGoogleConnect() {

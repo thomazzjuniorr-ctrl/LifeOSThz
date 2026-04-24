@@ -310,6 +310,21 @@ function parseChecklist(value, existing = []) {
   return parseLines(value, existing);
 }
 
+function parseIdList(value, existing = []) {
+  if (Array.isArray(value)) {
+    return value.filter(Boolean).map((item) => String(item).trim()).filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(/[\r\n,]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return existing || [];
+}
+
 function normalizeSearchText(value = "") {
   return String(value)
     .normalize("NFD")
@@ -998,7 +1013,7 @@ function prepareState(state) {
   state.areas = state.areas || [];
   state.projects = state.projects || [];
   state.objectives = state.objectives || [];
-  state.sprints = state.sprints || [];
+  state.sprints = normalizeSprints(state.sprints || [], Number(String(state.ui?.selectedDate || formatISODate(new Date())).slice(0, 4)));
   state.blocks = state.blocks || [];
   state.dayTypes = state.dayTypes || [];
   state.dayOverrides = state.dayOverrides || [];
@@ -1106,6 +1121,92 @@ function getObjectiveById(state, objectiveId) {
 
 function getSprintById(state, sprintId) {
   return state.sprints.find((sprint) => sprint.id === sprintId) || null;
+}
+
+function inferSprintSlot(sprint = {}, index = 0) {
+  if (Number.isInteger(Number(sprint.slot))) {
+    return clamp(Number(sprint.slot), 1, 4);
+  }
+
+  const startMonth = Number(String(sprint.startDate || "").slice(5, 7));
+  if (Number.isFinite(startMonth) && startMonth >= 1 && startMonth <= 12) {
+    return clamp(Math.floor((startMonth - 1) / 3) + 1, 1, 4);
+  }
+
+  return clamp(index + 1, 1, 4);
+}
+
+function getSprintRangeForSlot(slot, year) {
+  const ranges = {
+    1: { startDate: `${year}-01-01`, endDate: `${year}-03-31`, periodLabel: `Jan-Mar ${year}` },
+    2: { startDate: `${year}-04-01`, endDate: `${year}-06-30`, periodLabel: `Abr-Jun ${year}` },
+    3: { startDate: `${year}-07-01`, endDate: `${year}-09-30`, periodLabel: `Jul-Set ${year}` },
+    4: { startDate: `${year}-10-01`, endDate: `${year}-12-31`, periodLabel: `Out-Dez ${year}` },
+  };
+
+  return ranges[slot] || ranges[1];
+}
+
+function normalizeSprintPayload(payload = {}, existing = null, index = 0, referenceYear = new Date().getFullYear()) {
+  const slot = inferSprintSlot(payload, index);
+  const range = getSprintRangeForSlot(slot, referenceYear);
+  const existingPriorities = existing?.priorities || existing?.keyResults || [];
+  const existingProjects = existing?.projectIds || [];
+  const existingKeywords = existing?.keywords || [];
+
+  return {
+    id: payload.id || existing?.id || `sprint-${slot}-${referenceYear}`,
+    slot,
+    title: String(payload.title || payload.name || existing?.title || existing?.name || `Sprint ${slot}`).trim(),
+    startDate: payload.startDate || existing?.startDate || range.startDate,
+    endDate: payload.endDate || existing?.endDate || range.endDate,
+    periodLabel: payload.periodLabel || existing?.periodLabel || range.periodLabel,
+    description: payload.description || payload.theme || existing?.description || existing?.theme || "",
+    theme: payload.theme || payload.description || existing?.theme || existing?.description || "",
+    objectiveIds: parseIdList(payload.objectiveIds, existing?.objectiveIds || []),
+    projectIds: parseIdList(payload.projectIds, existingProjects),
+    priorities: parseLines(payload.priorities, existingPriorities),
+    keywords: parseLines(payload.keywords, existingKeywords),
+    priorityAreas: parseIdList(payload.priorityAreas, existing?.priorityAreas || []),
+    status: payload.status || existing?.status || "planned",
+  };
+}
+
+function normalizeSprints(source = [], referenceYear = new Date().getFullYear()) {
+  const normalized = Array.isArray(source)
+    ? source.map((sprint, index) => normalizeSprintPayload(sprint, sprint, index, referenceYear))
+    : [];
+  const bySlot = new Map(normalized.map((sprint) => [sprint.slot, sprint]));
+
+  for (let slot = 1; slot <= 4; slot += 1) {
+    if (!bySlot.has(slot)) {
+      const placeholder = normalizeSprintPayload({
+        id: `sprint-${slot}-${referenceYear}`,
+        slot,
+        title: `Sprint ${slot}`,
+        description: "Defina o tema, as prioridades e os projetos relacionados.",
+        priorities: [],
+        keywords: [],
+      }, null, slot - 1, referenceYear);
+      bySlot.set(slot, placeholder);
+    }
+  }
+
+  const ordered = [...bySlot.values()].sort((left, right) => left.slot - right.slot);
+  const hasCurrent = ordered.some((sprint) => sprint.status === "current");
+
+  if (!hasCurrent) {
+    const today = formatISODate(new Date());
+    const active = ordered.find((sprint) => sprint.startDate <= today && sprint.endDate >= today) || ordered[0];
+    ordered.forEach((sprint) => {
+      sprint.status = sprint.id === active.id ? "current" : sprint.status === "current" ? "planned" : sprint.status;
+    });
+  }
+
+  return ordered.map((sprint, index) => ({
+    ...sprint,
+    status: sprint.status || (index === 0 ? "current" : "planned"),
+  }));
 }
 
 function getTaskById(state, taskId) {
@@ -1263,10 +1364,68 @@ function defaultNextAction(task) {
   return `comecar por ${task.title.toLowerCase()}`;
 }
 
+function collectTaskSearchText(task) {
+  return normalizeSearchText([
+    task.title,
+    task.notes,
+    task.nextAction,
+    ...(task.subtasks || []),
+  ].filter(Boolean).join(" "));
+}
+
+function evaluateSprintFit(task, state) {
+  const currentSprint = state.sprints.find((sprint) => sprint.status === "current") || null;
+  if (!currentSprint) {
+    return { currentSprint: null, matched: false, strength: 0, reasons: [] };
+  }
+
+  const reasons = [];
+  let strength = 0;
+  const haystack = collectTaskSearchText(task);
+
+  if (task.sprintId && task.sprintId === currentSprint.id) {
+    strength += 4;
+    reasons.push("ja esta ligada ao sprint atual");
+  }
+
+  if (task.projectId && currentSprint.projectIds.includes(task.projectId)) {
+    strength += 3;
+    reasons.push("bate com um projeto priorizado no sprint");
+  }
+
+  if (task.areaId && currentSprint.priorityAreas.includes(task.areaId)) {
+    strength += 2;
+    reasons.push("bate com uma area priorizada no sprint");
+  }
+
+  if (task.objectiveId && currentSprint.objectiveIds.includes(task.objectiveId)) {
+    strength += 3;
+    reasons.push("move um objetivo priorizado no sprint");
+  }
+
+  if (currentSprint.keywords.some((keyword) => haystack.includes(normalizeSearchText(keyword)))) {
+    strength += 2;
+    reasons.push("usa linguagem parecida com a prioridade do sprint");
+  }
+
+  if (currentSprint.priorities.some((priority) => haystack.includes(normalizeSearchText(priority)))) {
+    strength += 1;
+    reasons.push("se conecta com uma prioridade declarada do sprint");
+  }
+
+  return {
+    currentSprint,
+    matched: strength > 0,
+    strength,
+    reasons: [...new Set(reasons)].slice(0, 3),
+  };
+}
+
 function classifyTask(task, state, referenceDate, flags) {
   const reasons = [];
   const dueDelta = task.dueDate ? differenceInDays(task.dueDate, referenceDate) : 99;
   const scheduledDelta = task.scheduledDate ? differenceInDays(task.scheduledDate, referenceDate) : 99;
+  const sprintFit = evaluateSprintFit(task, state);
 
   if (isTemplateTask(task)) {
     return {
@@ -1317,6 +1476,13 @@ function classifyTask(task, state, referenceDate, flags) {
     decision = "Processar";
     bucket = "backlog";
     reasons.push("entrou pela inbox e ainda precisa de processamento");
+  }
+
+  if (task.location === "captured") {
+    stage = "clarify";
+    decision = "Executar";
+    bucket = "priority";
+    reasons.push("veio da entrada rapida e ja passou pela interpretacao automatica");
   }
 
   if (task.type === "idea" && task.location === "inbox") {
@@ -1372,6 +1538,25 @@ function classifyTask(task, state, referenceDate, flags) {
     reasons.push("a linha de raciocinio pede proxima acao clara");
   }
 
+  if (
+    sprintFit.currentSprint
+    && !sprintFit.matched
+    && task.location !== "backlog"
+    && !task.scheduledDate
+    && dueDelta > 3
+    && toNumber(task.urgency, 3) <= 2
+    && toNumber(task.impact, 3) <= 3
+  ) {
+    stage = "organize";
+    decision = "Backlog";
+    bucket = "backlog";
+    reasons.push("nao conversa com o sprint atual e nao pede espaco imediato");
+  }
+
+  if (sprintFit.matched) {
+    reasons.push(...sprintFit.reasons);
+  }
+
   return {
     stage,
     decision,
@@ -1420,7 +1605,7 @@ function getMethodBonus(task, method, gtd) {
   if (method === "scrum") {
     if (task.sprintId) {
       score += 16;
-      reasons.push("move um sprint atual");
+      reasons.push("move um sprint ativo");
     }
     if (task.projectId) {
       score += 6;
@@ -1436,6 +1621,7 @@ function scoreTask(task, state, referenceDate, dayProfile, gtd, flags, method) {
   const settings = state.settings.prioritization;
   const dueDelta = task.dueDate ? differenceInDays(task.dueDate, referenceDate) : 99;
   const scheduledDelta = task.scheduledDate ? differenceInDays(task.scheduledDate, referenceDate) : 99;
+  const sprintFit = evaluateSprintFit(task, state);
   let score = PRIORITY_BASE[task.priority] || 30;
 
   score += toNumber(task.impact, 3) * 8;
@@ -1450,7 +1636,15 @@ function scoreTask(task, state, referenceDate, dayProfile, gtd, flags, method) {
 
   if (task.sprintId) {
     score += 10;
-    reasons.push("move o sprint atual");
+    reasons.push("esta ligada a um sprint");
+  }
+
+  if (sprintFit.matched) {
+    score += 10 + sprintFit.strength * 2;
+    reasons.push(...sprintFit.reasons);
+  } else if (sprintFit.currentSprint && dueDelta > 2 && toNumber(task.urgency, 3) <= 3) {
+    score -= 8;
+    reasons.push("fora do foco do sprint atual");
   }
 
   if (task.critical) {
@@ -1848,6 +2042,75 @@ function buildHabitWeekMatrix(habit, weekDates, selectedDate) {
   });
 }
 
+function buildMonthWeekRows(selectedDate) {
+  const [year, month] = String(selectedDate || formatISODate(new Date())).split("-").map(Number);
+  const firstDay = new Date(year, month - 1, 1);
+  const lastDay = new Date(year, month, 0);
+  const start = new Date(firstDay);
+  const startOffset = (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - startOffset);
+  const end = new Date(lastDay);
+  const endOffset = 6 - ((end.getDay() + 6) % 7);
+  end.setDate(end.getDate() + endOffset);
+  const rows = [];
+
+  for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 7)) {
+    const weekStart = new Date(cursor);
+    const days = [];
+
+    for (let index = 0; index < 7; index += 1) {
+      const day = new Date(weekStart);
+      day.setDate(weekStart.getDate() + index);
+      const iso = formatISODate(day);
+      days.push({
+        date: iso,
+        weekdayLabel: formatWeekday(iso),
+        inMonth: day.getMonth() === month - 1,
+      });
+    }
+
+    if (days.some((day) => day.inMonth)) {
+      rows.push(days);
+    }
+  }
+
+  return rows;
+}
+
+function buildWeeklyTracker(title, kind, id, logs, selectedDate, targetPerWeek = 1, note = "", areaName = "") {
+  const monthWeeks = buildMonthWeekRows(selectedDate);
+  const selectedWeekDates = new Set(getWeekDates(selectedDate));
+  const normalizedLogs = normalizeDateLogEntries(logs || []);
+  const doneDates = new Set(normalizedLogs.filter((entry) => entry.done).map((entry) => entry.date));
+  const monthDates = new Set(monthWeeks.flat().filter((day) => day.inMonth).map((day) => day.date));
+  const monthDone = [...doneDates].filter((date) => monthDates.has(date)).length;
+  const monthExpected = targetPerWeek * monthWeeks.length;
+  const currentWeekDone = [...doneDates].filter((date) => selectedWeekDates.has(date)).length;
+
+  return {
+    id,
+    kind,
+    title,
+    note,
+    areaName,
+    targetPerWeek,
+    currentWeekDone,
+    monthDone,
+    monthExpected,
+    progressLabel: `${monthDone}/${monthExpected}`,
+    weeks: monthWeeks.map((week, index) => ({
+      id: `${id}-week-${index + 1}`,
+      label: `Semana ${index + 1}`,
+      done: week.filter((day) => doneDates.has(day.date)).length,
+      days: week.map((day) => ({
+        ...day,
+        done: doneDates.has(day.date),
+        selected: selectedWeekDates.has(day.date),
+      })),
+    })),
+  };
+}
+
 function buildRoutineChecklistItems(state, selectedDate) {
   return [
     ...(state.routines.morning || []).map((item) => ({
@@ -2150,6 +2413,9 @@ function buildHealthModel(state, tasks, selectedDate, weekData) {
   const careDoneCount = careItems.filter((item) => item.doneToday).length;
   const dietDoneCount = dietMeals.filter((item) => item.doneToday).length;
   const latestMeasures = measureLogs[0] || null;
+  const workoutHabit = state.habits.find((habit) => habit.id === "habit-workout")
+    || state.habits.find((habit) => normalizeSearchText(habit.title).includes("trein"));
+  const careTrackers = state.health.careItems.map((item) => buildWeeklyTracker(item.title, "care", item.id, item.logs || [], selectedDate, 7, item.note || "", "Saude"));
 
   return {
     stats: {
@@ -2163,7 +2429,11 @@ function buildHealthModel(state, tasks, selectedDate, weekData) {
     measureLogs: measureLogs.slice(0, 6),
     latestMeasures,
     careItems,
+    careTrackers,
     dietMeals,
+    workoutTracker: workoutHabit
+      ? buildWeeklyTracker(workoutHabit.title, "habit", workoutHabit.id, workoutHabit.logs || [], selectedDate, workoutHabit.targetPerWeek || 3, workoutHabit.note || "", "Saude")
+      : null,
     workouts: workouts.slice(0, 6),
     healthTasks: tasks.filter((task) => task.areaId === "area-health").slice(0, 6),
     evolution: {
@@ -2281,6 +2551,12 @@ function buildRoutineModel(state, tasks, selectedDate, weekData) {
       doneToday: Boolean((habit.logs || []).find((entry) => entry.date === selectedDate)?.done),
     };
   });
+  const routineTrackers = [...(state.routines.morning || []), ...(state.routines.night || [])]
+    .sort((left, right) => left.order - right.order)
+    .map((item) => buildWeeklyTracker(item.title, "routine", item.id, item.logs || [], selectedDate, 7, item.note || "", "Rotina"));
+  const careTrackers = state.health.careItems.map((item) => buildWeeklyTracker(item.title, "care", item.id, item.logs || [], selectedDate, 7, item.note || "", "Saude"));
+  const workoutHabit = state.habits.find((habit) => habit.id === "habit-workout")
+    || state.habits.find((habit) => normalizeSearchText(habit.title).includes("trein"));
 
   return {
     morning: [...(state.routines.morning || [])]
@@ -2295,37 +2571,66 @@ function buildRoutineModel(state, tasks, selectedDate, weekData) {
       ...item,
       doneToday: Boolean((item.logs || []).find((entry) => entry.date === selectedDate)?.done),
     })),
+    routineTrackers,
+    careTrackers,
+    workoutTracker: workoutHabit
+      ? buildWeeklyTracker(workoutHabit.title, "habit", workoutHabit.id, workoutHabit.logs || [], selectedDate, workoutHabit.targetPerWeek || 3, workoutHabit.note || "", "Saude")
+      : null,
     weekDates: weekData.dates,
     selectedDate,
   };
 }
 
-function buildAgendaModel(state, tasks, weekData, selectedDate) {
-  const blocks = state.blocks.filter((block) => weekData.dates.includes(block.date));
-  const agendaEditorTasks = tasks
-    .filter((task) => task.scheduledDate === selectedDate)
-    .map((task) => ({
-      ...task,
-      canEdit: true,
-    }));
-  const agendaEditorBlocks = blocks.filter((block) => block.date === selectedDate);
+function buildInboxModel(tasks) {
+  const raw = tasks.filter((task) => task.location === "inbox");
+  const recent = [...tasks]
+    .filter((task) => ["capture", "voice"].includes(task.source) || task.location === "inbox" || task.location === "captured")
+    .sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")) || sortByScore(left, right))
+    .slice(0, 8);
 
   return {
-    days: weekData.days,
-    connected: state.calendar.connected,
-    google: state.settings.googleCalendar,
-    editor: {
-      date: selectedDate,
-      tasks: agendaEditorTasks,
-      blocks: agendaEditorBlocks,
+    raw,
+    recent,
+    counts: {
+      raw: raw.length,
+      captured: tasks.filter((task) => task.location === "captured").length,
     },
   };
 }
 
+function buildAgendaModel(state, tasks, weekData, selectedDate) {
+  const blocks = state.blocks.filter((block) => weekData.dates.includes(block.date));
+  const unscheduled = tasks
+    .filter((task) => !task.scheduledDate && ["do-now", "priority", "schedule"].includes(task.finalBucket))
+    .sort(sortByScore)
+    .slice(0, 8);
+
+  return {
+    days: weekData.days.map((day) => ({
+      ...day,
+      tasks: tasks
+        .filter((task) => task.scheduledDate === day.date)
+        .sort(sortByScore),
+      blocks: blocks.filter((block) => block.date === day.date),
+    })),
+    unscheduled,
+    connected: state.calendar.connected,
+    google: state.settings.googleCalendar,
+    selectedDate,
+  };
+}
+
 function buildPlanningModel(state, tasks) {
+  const sprints = state.sprints.map((sprint) => ({
+    ...sprint,
+    projectNames: sprint.projectIds.map((projectId) => getProjectById(state, projectId)?.name).filter(Boolean),
+    objectiveTitles: sprint.objectiveIds.map((objectiveId) => getObjectiveById(state, objectiveId)?.title).filter(Boolean),
+  }));
+
   return {
     currentSprint: state.sprints.find((sprint) => sprint.status === "current") || null,
     upcomingSprint: state.sprints.find((sprint) => sprint.status === "upcoming") || null,
+    sprints,
     objectives: state.objectives,
     backlog: tasks.filter((task) => task.location === "backlog" || task.finalBucket === "backlog").slice(0, 10),
     templates: state.tasks.filter((task) => isTemplateTask(task)).slice(0, 10),
@@ -2407,6 +2712,11 @@ function blankEntity(kind, state) {
     return { id: "", title: "", areaId: state.areas[0]?.id || "", projectId: "", progress: 0, dueDate: state.ui.selectedDate, description: "" };
   }
 
+  if (kind === "sprint") {
+    const year = Number(String(state.ui.selectedDate || formatISODate(new Date())).slice(0, 4));
+    return normalizeSprintPayload({ title: "Novo sprint", slot: 1 }, null, 0, year);
+  }
+
   if (kind === "habit") {
     return { id: "", title: "", areaId: "area-health", targetPerWeek: 3, preferredWeekdays: [], note: "", logs: [] };
   }
@@ -2458,6 +2768,7 @@ function buildEditorView(state) {
     if (kind === "area") return state.areas.find((entry) => entry.id === id) || blankEntity(kind, state);
     if (kind === "project") return state.projects.find((entry) => entry.id === id) || blankEntity(kind, state);
     if (kind === "objective") return state.objectives.find((entry) => entry.id === id) || blankEntity(kind, state);
+    if (kind === "sprint") return state.sprints.find((entry) => entry.id === id) || blankEntity(kind, state);
     if (kind === "habit") return state.habits.find((entry) => entry.id === id) || blankEntity(kind, state);
     if (kind === "block") return state.blocks.find((entry) => entry.id === id) || blankEntity(kind, state);
     if (kind === "health-weight") return state.health.weightLogs.find((entry) => entry.id === id) || blankEntity(kind, state);
@@ -2492,7 +2803,7 @@ export function buildAppModel(inputState, referenceDate = new Date()) {
   const dashboard = buildDashboardModel(state, filteredTasks, selectedDate, weekData);
   const prioritize = buildPrioritizeModel(filteredTasks, selectedDate);
   const organize = buildOrganizeModel(filteredTasks);
-  const inbox = filteredTasks.filter((task) => task.location === "inbox");
+  const inbox = buildInboxModel(filteredTasks);
   const settings = buildSettingsModel(state);
   const health = buildHealthModel(state, filteredTasks, selectedDate, weekData);
   const todayChecklist = buildTodayChecklistModel(state, filteredTasks, selectedDate, weekData);
@@ -3055,9 +3366,12 @@ export function updateTaskSchedule(state, taskId, updates = {}) {
   const nextState = cloneState(state);
   const task = getTaskById(nextState, taskId);
   if (!task) return nextState;
-  task.scheduledDate = updates.scheduledDate || task.scheduledDate;
+  task.scheduledDate = updates.scheduledDate ?? task.scheduledDate;
   task.scheduledPeriod = updates.scheduledPeriod || task.scheduledPeriod || guessPeriod(task);
-  task.location = "scheduled";
+  task.location = task.scheduledDate ? "scheduled" : (task.location === "backlog" ? "backlog" : "captured");
+  task.finalBucket = task.scheduledDate
+    ? (task.scheduledDate === nextState.ui.selectedDate ? "do-now" : "schedule")
+    : (task.finalBucket || "priority");
   task.status = ["delegated", "waiting", "discarded", "done"].includes(task.status) ? task.status : "todo";
   task.manualDecision = false;
   task.updatedAt = nowIso();
@@ -3157,6 +3471,52 @@ export function saveDietMeal(state, payload) {
   nextState.health.dietMeals.push(entry);
   pushHistory(nextState, "diet-meal", `Refeicao salva: ${entry.title}.`);
   return nextState;
+}
+
+export function captureInboxTask(state, transcript, referenceDate = formatISODate(new Date())) {
+  const nextState = cloneState(state);
+  const draft = analyzeCaptureText(nextState, transcript, referenceDate);
+  const basePayload = {
+    title: draft.title,
+    areaId: draft.areaId || nextState.areas[0]?.id || "",
+    projectId: draft.projectId || "",
+    context: draft.context || "flex",
+    dueDate: draft.dueDate || "",
+    scheduledDate: draft.scheduledDate || "",
+    scheduledPeriod: draft.scheduledPeriod || "",
+    estimatedMinutes: draft.estimatedMinutes || 30,
+    priority: draft.priority || "medium",
+    urgency: draft.urgency || 3,
+    subtasks: draft.checklist || [],
+    nextAction: draft.checklist?.[0] || "",
+    notes: draft.transcript ? `Captura rapida: ${draft.transcript}` : "",
+    source: "capture",
+    location: draft.scheduledDate ? "scheduled" : "captured",
+    status: "todo",
+  };
+  const currentSprint = nextState.sprints.find((sprint) => sprint.status === "current") || null;
+  const previewTask = normalizeTaskPayload(nextState, basePayload, null);
+  const sprintFit = evaluateSprintFit(previewTask, nextState);
+  const task = normalizeTaskPayload(nextState, {
+    ...basePayload,
+    sprintId: sprintFit.matched && currentSprint ? currentSprint.id : "",
+  }, null);
+
+  nextState.tasks.unshift(task);
+  pushHistory(nextState, "task-captured", `Captura simples interpretada: ${task.title}`, {
+    areaId: task.areaId,
+    projectId: task.projectId,
+    sprintId: task.sprintId,
+  });
+
+  return {
+    nextState,
+    task,
+    draft,
+    message: sprintFit.matched
+      ? "Captura interpretada e enviada para Organizar com apoio do sprint atual."
+      : "Captura interpretada e enviada para Organizar.",
+  };
 }
 
 export function addInboxTask(state, payload) {
@@ -3626,6 +3986,7 @@ export function closeEditor(state) {
 
 export function saveEntity(state, kind, payload) {
   const nextState = cloneState(state);
+  const referenceYear = Number(String(nextState.ui.selectedDate || formatISODate(new Date())).slice(0, 4));
 
   if (kind === "task") {
     const existing = payload.id ? getTaskById(nextState, payload.id) : null;
@@ -3653,6 +4014,20 @@ export function saveEntity(state, kind, payload) {
     const objective = normalizeObjectivePayload(payload, existing);
     nextState.objectives = nextState.objectives.filter((entry) => entry.id !== objective.id);
     nextState.objectives.push(objective);
+  }
+
+  if (kind === "sprint") {
+    const existing = nextState.sprints.find((entry) => entry.id === payload.id) || null;
+    const sprint = normalizeSprintPayload(payload, existing, inferSprintSlot(payload) - 1, referenceYear);
+    if (sprint.status === "current") {
+      nextState.sprints = nextState.sprints.map((entry) => ({
+        ...entry,
+        status: entry.id === sprint.id ? "current" : entry.status === "current" ? "planned" : entry.status,
+      }));
+    }
+    nextState.sprints = nextState.sprints.filter((entry) => entry.id !== sprint.id);
+    nextState.sprints.push(sprint);
+    nextState.sprints = normalizeSprints(nextState.sprints, referenceYear);
   }
 
   if (kind === "habit") {
@@ -3727,6 +4102,7 @@ export function deleteEntity(state, kind, id) {
   if (kind === "area") nextState.areas = nextState.areas.filter((entry) => entry.id !== id);
   if (kind === "project") nextState.projects = nextState.projects.filter((entry) => entry.id !== id);
   if (kind === "objective") nextState.objectives = nextState.objectives.filter((entry) => entry.id !== id);
+  if (kind === "sprint") nextState.sprints = nextState.sprints.filter((entry) => entry.id !== id);
   if (kind === "habit") nextState.habits = nextState.habits.filter((entry) => entry.id !== id);
   if (kind === "block") nextState.blocks = nextState.blocks.filter((entry) => entry.id !== id);
   if (kind === "health-weight") nextState.health.weightLogs = nextState.health.weightLogs.filter((entry) => entry.id !== id);
@@ -3767,7 +4143,27 @@ export function duplicateEntity(state, kind, id) {
     const existing = [...(nextState.routines.morning || []), ...(nextState.routines.night || [])].find((entry) => entry.id === id);
     if (existing) setRoutineItem(nextState, normalizeRoutinePayload({ ...existing, id: "", title: `${existing.title} (copia)` }, null));
   }
+  if (kind === "sprint") {
+    const existing = nextState.sprints.find((entry) => entry.id === id);
+    if (existing) {
+      const year = Number(String(nextState.ui.selectedDate || formatISODate(new Date())).slice(0, 4));
+      nextState.sprints.push(normalizeSprintPayload({ ...existing, id: "", title: `${existing.title} (copia)`, status: "planned" }, null, inferSprintSlot(existing) - 1, year));
+      nextState.sprints = normalizeSprints(nextState.sprints, year);
+    }
+  }
   pushHistory(nextState, "duplicate-entity", `Item duplicado: ${kind}`);
+  return nextState;
+}
+
+export function setActiveSprint(state, sprintId) {
+  const nextState = cloneState(state);
+  const sprint = nextState.sprints.find((entry) => entry.id === sprintId);
+  if (!sprint) return nextState;
+  nextState.sprints = nextState.sprints.map((entry) => ({
+    ...entry,
+    status: entry.id === sprintId ? "current" : entry.status === "current" ? "planned" : entry.status,
+  }));
+  pushHistory(nextState, "active-sprint", `Sprint atual definida: ${sprint.title}.`);
   return nextState;
 }
 

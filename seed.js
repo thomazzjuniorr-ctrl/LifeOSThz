@@ -256,7 +256,7 @@ function weekBlocks(weekDates) {
   return blocks;
 }
 
-const REASONING_BASE = `Quero que o sistema pense pela minha vida real, nao por um modelo generico de produtividade. Clareza vem antes da execucao: nenhuma tarefa entra no dia sem proxima acao clara. Quando uma tarefa tiver checklist, esse checklist deve virar base de entendimento, proximas acoes e refinamento automatico. A interpretacao por voz deve entender intencao antes de sugerir destino, sem criar um fluxo paralelo ao restante do sistema. Prioridade deve considerar impacto real na vida, impacto financeiro, consequencia de nao fazer, crescimento dos projetos, estabilidade futura e protecao da mudanca. Saude, rotina, filhos, familia, casa, alimentacao e treino sao base estrutural e nao devem ser sacrificados sempre pelo trabalho. Trabalho deve gerar resultado, previsibilidade e avancos reais, nao so ocupacao. O sistema deve evitar sobrecarga artificial, preferindo poucas tarefas bem executadas. Deve respeitar a rotina real: manha operacional e familiar, tarde de trabalho profundo, noite complementar, quarta e sexta com futebol, sabado para conteudo e projetos, domingo leve e dias de viagem com capacidade reduzida. Tarefas grandes devem ser quebradas em proximas acoes menores. Delegar e estrategico quando fizer sentido. Backlog nao e deposito infinito e precisa de limpeza constante. Habitos, saude, dieta e rotina precisam aparecer como execucao diaria, nao so como historico. A frente do sistema deve continuar simples: Fazer agora, Prioridade, Agendar, Delegar, Aguardar e Backlog. Alertas criticos precisam ficar visiveis e persistentes em dias de baixa capacidade. O sistema sugere automaticamente com base nessa logica, mas eu continuo com a decisao final.`;
+const REASONING_BASE = `Quero que o sistema pense pela minha vida real, nao por um modelo generico de produtividade. Entrada precisa ser simples: eu capturo rapido e o sistema interpreta area, projeto, urgencia, proxima acao e relacao com o sprint atual antes de mandar para Organizar. Clareza vem antes da execucao: nenhuma tarefa entra no fluxo sem uma proxima acao clara. Quando uma tarefa tiver checklist, esse checklist deve virar base de entendimento e refinamento automatico. Prioridade deve considerar impacto real na vida, impacto financeiro, consequencia de nao fazer, crescimento dos projetos, estabilidade futura e protecao da mudanca. Saude, rotina, filhos, familia, casa, alimentacao e treino sao base estrutural e nao devem ser sacrificados sempre pelo trabalho. Trabalho deve gerar resultado, previsibilidade e avancos reais, nao so ocupacao. O sistema deve evitar sobrecarga artificial, preferindo poucas tarefas bem executadas. Deve respeitar a rotina real: manha operacional e familiar, tarde de trabalho profundo, noite complementar, quarta e sexta com futebol, sabado para conteudo e projetos, domingo leve e dias de viagem com capacidade reduzida. O sprint atual deve influenciar o peso das novas tarefas: o que conversa com o sprint sobe, o que nao conversa e nao e urgente pode ir para backlog ou esperar melhor momento. Tarefas grandes devem ser quebradas em proximas acoes menores. Delegar e estrategico quando fizer sentido. Backlog nao e deposito infinito e precisa de limpeza constante. Habitos, saude, dieta e rotina precisam aparecer como execucao diaria e acompanhamento semanal manual. A frente do sistema deve continuar simples: Fazer agora, Prioridade, Agendar, Delegar, Aguardar e Backlog. Alertas criticos precisam ficar visiveis e persistentes em dias de baixa capacidade. O sistema sugere automaticamente com base nessa logica, mas eu continuo com a decisao final.`;
 
 export function buildSeedState(baseDate = new Date()) {
   const today = formatISODate(baseDate);
@@ -296,26 +296,68 @@ export function buildSeedState(baseDate = new Date()) {
 
   const sprints = [
     {
-      id: "sprint-q2-2026",
-      title: "Clareza, mudanca e ritmo sustentavel",
-      quarter: currentQuarter,
+      id: "sprint-1-2026",
+      slot: 1,
+      title: "Sprint 1",
+      periodLabel: "Jan-Mar 2026",
+      startDate: "2026-01-01",
+      endDate: "2026-03-31",
+      status: "planned",
+      description: "Base do ano, limpeza inicial e estabilidade da rotina.",
+      theme: "Base do ano, limpeza inicial e estabilidade da rotina.",
+      objectiveIds: ["objective-routine", "objective-work"],
+      projectIds: ["project-assessoria"],
+      priorityAreas: ["area-routine", "area-work"],
+      priorities: ["limpar backlog antigo", "organizar rotina da semana", "ganhar previsibilidade no trabalho"],
+      keywords: ["rotina", "backlog", "organizacao", "cliente"],
+    },
+    {
+      id: "sprint-2-2026",
+      slot: 2,
+      title: "Sprint 2",
+      periodLabel: "Abr-Jun 2026",
       startDate: "2026-04-01",
       endDate: "2026-06-30",
       status: "current",
-      theme: "Menos bagunca, mais decisao boa e execucao limpa.",
+      description: "Clareza, saude e estrutura do app junto da preparacao da mudanca.",
+      theme: "Clareza, saude e estrutura do app junto da preparacao da mudanca.",
       objectiveIds: ["objective-move", "objective-health", "objective-work", "objective-routine"],
-      keyResults: ["Mapa financeiro da mudanca fechado", "Treino em casa protegido", "Backlog dos projetos limpo", "Dias da semana organizados por capacidade"],
+      projectIds: ["project-assessoria", "project-conteudo"],
+      priorityAreas: ["area-health", "area-move", "area-routine", "area-work"],
+      priorities: ["proteger treino em casa", "estruturar o Life OS", "mapear custos da mudanca", "limpar backlog dos projetos"],
+      keywords: ["saude", "treino", "mudanca", "life os", "organizar semana", "conteudo"],
     },
     {
-      id: "sprint-q3-2026",
-      title: "Escolha da nova base",
-      quarter: "Q3 2026",
+      id: "sprint-3-2026",
+      slot: 3,
+      title: "Sprint 3",
+      periodLabel: "Jul-Set 2026",
       startDate: "2026-07-01",
       endDate: "2026-09-30",
       status: "upcoming",
-      theme: "Escolher o lugar e preparar o novo espaco.",
+      description: "Escolha da nova base e consolidacao do espaco de trabalho.",
+      theme: "Escolha da nova base e consolidacao do espaco de trabalho.",
       objectiveIds: ["objective-move", "objective-work"],
-      keyResults: ["Shortlist de imoveis", "Plano de custos validado", "Espaco de trabalho desenhado"],
+      projectIds: ["project-financeira", "project-assessoria"],
+      priorityAreas: ["area-move", "area-work", "area-finance"],
+      priorities: ["shortlist de imoveis", "plano financeiro validado", "estrutura do novo escritorio"],
+      keywords: ["imovel", "aluguel", "espaco de trabalho", "financeiro"],
+    },
+    {
+      id: "sprint-4-2026",
+      slot: 4,
+      title: "Sprint 4",
+      periodLabel: "Out-Dez 2026",
+      startDate: "2026-10-01",
+      endDate: "2026-12-31",
+      status: "planned",
+      description: "Mudanca executada, consolidacao da nova base e ritmo sustentavel.",
+      theme: "Mudanca executada, consolidacao da nova base e ritmo sustentavel.",
+      objectiveIds: ["objective-move", "objective-health", "objective-work"],
+      projectIds: ["project-conteudo", "project-financeira"],
+      priorityAreas: ["area-move", "area-health", "area-work"],
+      priorities: ["executar a mudanca", "estabilizar a nova casa", "manter projetos rodando sem caos"],
+      keywords: ["mudanca", "estabilizar", "nova casa", "ritmo"],
     },
   ];
 

@@ -111,9 +111,12 @@ button {
 .metric-card,
 .day-chip,
 .board-column,
+.crm-stage-column,
 .modal-card,
 .floating-alert-card,
 .task-card,
+.crm-lead-card,
+.crm-followup-item,
 .stage-card,
 .stage-summary-card,
 .period-card,
@@ -151,6 +154,8 @@ button {
 .muted-copy,
 .panel-head p,
 .task-card p,
+.crm-lead-card p,
+.crm-followup-item p,
 .metric-card p,
 .timeline-item small,
 .calendar-event small,
@@ -576,6 +581,125 @@ button {
 
 .board-column {
   min-width: 250px;
+}
+
+.crm-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.crm-board-rail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.9rem;
+}
+
+.crm-board-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: flex-start;
+  padding: 1rem 1.05rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  text-align: left;
+}
+
+.crm-board-chip strong,
+.crm-followup-item strong {
+  font-family: "Aptos Display", "Segoe UI Variable Display", "Segoe UI", sans-serif;
+}
+
+.crm-board-chip small,
+.crm-lead-dates span,
+.crm-followup-meta span {
+  color: var(--muted);
+}
+
+.crm-board-chip.active {
+  background: rgba(67, 104, 81, 0.16);
+  border-color: rgba(67, 104, 81, 0.24);
+}
+
+.crm-board-chip.add {
+  justify-content: center;
+}
+
+.crm-stage-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(280px, 1fr);
+  gap: 1rem;
+  overflow-x: auto;
+  align-items: start;
+  padding-bottom: 0.25rem;
+}
+
+.crm-stage-column {
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem;
+}
+
+.crm-stage-column.drag-target {
+  border-color: rgba(67, 104, 81, 0.3);
+  background: rgba(242, 248, 243, 0.95);
+}
+
+.crm-stage-list,
+.crm-followup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.crm-lead-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  cursor: grab;
+  transition: transform 0.18s ease, opacity 0.18s ease, box-shadow 0.18s ease;
+}
+
+.crm-lead-card.dragging {
+  opacity: 0.45;
+  transform: scale(0.985);
+  cursor: grabbing;
+}
+
+.crm-lead-footer,
+.crm-followup-item,
+.crm-followup-meta {
+  display: flex;
+  gap: 0.8rem;
+}
+
+.crm-lead-footer,
+.crm-followup-item {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.crm-lead-dates {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.crm-followup-item {
+  padding: 1rem;
+}
+
+.crm-followup-meta {
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 .layout-grid {
@@ -1151,6 +1275,20 @@ button {
     flex: 1;
   }
 
+  .crm-board-rail {
+    grid-template-columns: 1fr;
+  }
+
+  .crm-stage-board {
+    grid-auto-columns: minmax(84vw, 1fr);
+  }
+
+  .crm-followup-item,
+  .crm-lead-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
   .workspace-sidebar.mobile-drawer {
     position: fixed;
     top: 1rem;
@@ -1601,6 +1739,141 @@ button {
   margin-bottom: 0.85rem;
 }
 
+.simple-capture-shell,
+.weekly-tracker-card,
+.agenda-kanban-task,
+.sprint-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.simple-capture-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.organize-decision-grid,
+.compact-inline-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.sprint-card.active {
+  border-color: rgba(67, 104, 81, 0.22);
+  background: linear-gradient(180deg, rgba(242, 248, 243, 0.98), rgba(255, 255, 255, 0.96));
+}
+
+.weekly-tracker-card {
+  padding: 1rem;
+  border-radius: 20px;
+  border: 1px solid rgba(55, 81, 63, 0.1);
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.weekly-tracker-head,
+.weekly-tracker-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+}
+
+.weekly-tracker-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+  color: var(--muted);
+}
+
+.weekly-tracker-table {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.weekly-tracker-weekdays,
+.weekly-tracker-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.weekly-tracker-weekdays span {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.weekly-day-chip {
+  border: 1px solid rgba(55, 81, 63, 0.12);
+  border-radius: 14px;
+  background: rgba(246, 249, 246, 0.98);
+  min-height: 42px;
+  padding: 0.55rem 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text);
+}
+
+.weekly-day-chip.done {
+  background: rgba(225, 241, 229, 0.98);
+  border-color: rgba(67, 104, 81, 0.22);
+  color: var(--accent-strong);
+}
+
+.weekly-day-chip.selected {
+  box-shadow: inset 0 0 0 1px rgba(67, 104, 81, 0.28);
+}
+
+.weekly-day-chip.empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(93, 106, 94, 0.35);
+  background: rgba(248, 250, 248, 0.75);
+}
+
+.agenda-kanban-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(220px, 1fr));
+  gap: 0.9rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.agenda-day-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-height: 220px;
+}
+
+.agenda-kanban-task {
+  padding: 0.9rem;
+  border-radius: 18px;
+  border: 1px solid rgba(55, 81, 63, 0.1);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 12px 26px rgba(35, 52, 38, 0.06);
+}
+
+.agenda-day-drop-zone {
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.agenda-day-drop-zone.drag-target {
+  border-color: rgba(67, 104, 81, 0.28);
+  background: rgba(239, 247, 241, 0.97);
+  transform: translateY(-2px);
+}
+
+.check-toggle.static {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .field.compact span {
   font-size: 0.78rem;
 }
@@ -1657,12 +1930,23 @@ button {
   .routine-dual-grid,
   .health-quick-grid,
   .evolution-grid,
-  .bucket-move-grid {
+  .bucket-move-grid,
+  .organize-decision-grid,
+  .compact-inline-grid {
     grid-template-columns: 1fr;
   }
 
   .habit-week-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .weekly-tracker-weekdays,
+  .weekly-tracker-days {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .agenda-kanban-grid {
+    grid-template-columns: repeat(7, minmax(185px, 1fr));
   }
 
   .workspace-cover-band {
