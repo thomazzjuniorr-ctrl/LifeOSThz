@@ -17,6 +17,7 @@ import {
   moveTaskToBucket,
   openEditor,
   replanWeek,
+  reorderAgendaTask,
   resizeLayoutCard,
   restoreLayoutDefault,
   reorderChecklistTask,
@@ -24,11 +25,6 @@ import {
   confirmVoiceCapture,
   saveEntity,
   saveGoogleCalendarConfig,
-  saveDietMeal,
-  saveHealthCareItem,
-  saveHealthMeasure,
-  saveHealthWeight,
-  saveHealthWorkout,
   saveSettings,
   setActiveSection,
   setActiveSprint,
@@ -39,13 +35,9 @@ import {
   setChecklistView,
   setPriorityMethod,
   setSelectedDate,
-  toggleDietMealForDate,
-  toggleHealthCareForDate,
-  toggleRoutineForDate,
   toggleTaskSubtask,
   setWeeklyEnergy,
   toggleEditMode,
-  toggleHabitForDate,
   updateBlockSchedule,
   updateTaskSchedule,
 } from "./engine.js";
@@ -78,8 +70,6 @@ const SECTION_GROUPS = [
     items: [
       { id: "areas", label: "Areas" },
       { id: "projects", label: "Projetos" },
-      { id: "routine", label: "Rotina" },
-      { id: "health", label: "Saude" },
       { id: "planning", label: "Planejamento" },
       { id: "settings", label: "Configuracoes" },
     ],
@@ -96,8 +86,6 @@ const PAGE_META = {
   organize: { kicker: "Saida", title: "Organizar", text: "Complexo por tras, simples na frente." },
   areas: { kicker: "Mapa", title: "Areas", text: "Uma vida so, separada por frentes e nao por sistemas diferentes." },
   projects: { kicker: "Trabalho", title: "Projetos", text: "Cada projeto com sua leitura, dentro do mesmo banco unico." },
-  routine: { kicker: "Apoio", title: "Rotina", text: "Checklists, habitos, treino e energia semanal." },
-  health: { kicker: "Saude", title: "Saude", text: "Execucao diaria, disciplina e evolucao em um bloco limpo." },
   planning: { kicker: "Estrutura", title: "Planejamento", text: "Sprint, objetivos, backlog e modelos." },
   agenda: { kicker: "Tempo", title: "Agenda", text: "Calendario interno estilo workspace com suporte futuro ao Google." },
   settings: { kicker: "Sistema", title: "Configuracoes", text: "Linha de raciocinio, modo edicao, layout e parametros." },
@@ -181,23 +169,7 @@ function progressBar(value) {
   `;
 }
 
-function getChecklistToggleMeta(entry = {}) {
-  if (entry.kind === "habit") {
-    return { action: "toggle-habit-inline", attr: "data-habit-id", value: entry.id, label: "habito" };
-  }
-
-  if (entry.kind === "routine") {
-    return { action: "toggle-routine-inline", attr: "data-routine-id", value: entry.id, label: "rotina" };
-  }
-
-  if (entry.kind === "care") {
-    return { action: "toggle-care-inline", attr: "data-care-id", value: entry.id, label: "cuidado" };
-  }
-
-  if (entry.kind === "diet") {
-    return { action: "toggle-diet-inline", attr: "data-diet-id", value: entry.id, label: "refeicao" };
-  }
-
+function getChecklistToggleMeta(_entry = {}) {
   return null;
 }
 
@@ -208,48 +180,6 @@ function buildChecklistToggleButton(entry, date) {
   }
 
   return `<button class="check-toggle ${entry.done ? "done" : ""}" data-action="${meta.action}" ${meta.attr}="${entry.id}" data-date="${date}" aria-label="${escapeHtml(`${entry.done ? "Desmarcar" : "Marcar"} ${meta.label} ${entry.title}`)}">${entry.done ? "OK" : ""}</button>`;
-}
-
-function renderWeeklyTracker(tracker, options = {}) {
-  if (!tracker) return "";
-  const actionMap = {
-    habit: { action: "toggle-habit", attr: "data-habit-id" },
-    routine: { action: "toggle-routine-inline", attr: "data-routine-id" },
-    care: { action: "toggle-care-inline", attr: "data-care-id" },
-  };
-  const config = actionMap[tracker.kind] || actionMap.habit;
-
-  return `
-    <article class="weekly-tracker-card">
-      <div class="weekly-tracker-head">
-        <div>
-          <strong>${escapeHtml(tracker.title)}</strong>
-          <p>${escapeHtml(tracker.areaName || "")}${tracker.note ? ` • ${escapeHtml(tracker.note)}` : ""}</p>
-        </div>
-        <div class="weekly-tracker-meta">
-          <span>${escapeHtml(`${tracker.currentWeekDone}/${tracker.targetPerWeek} na semana`)}</span>
-          <strong>${escapeHtml(tracker.progressLabel)}</strong>
-        </div>
-      </div>
-      ${progressBar(tracker.monthExpected ? Math.round((tracker.monthDone / tracker.monthExpected) * 100) : 0)}
-      <div class="weekly-tracker-table">
-        <div class="weekly-tracker-weekdays">
-          ${["Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado", "Domingo"].map((day) => `<span>${escapeHtml(day)}</span>`).join("")}
-        </div>
-        ${tracker.weeks.map((week) => `
-          <div class="weekly-tracker-row">
-            <strong>${escapeHtml(week.label)}</strong>
-            <div class="weekly-tracker-days">
-              ${week.days.map((day) => day.inMonth
-                ? `<button class="weekly-day-chip ${day.done ? "done" : ""} ${day.selected ? "selected" : ""}" data-action="${config.action}" ${config.attr}="${tracker.id}" data-date="${day.date}">${escapeHtml(day.weekdayLabel)}</button>`
-                : `<span class="weekly-day-chip empty">-</span>`).join("")}
-            </div>
-          </div>
-        `).join("")}
-      </div>
-      ${options.showSummary !== false ? `<div class="meta-row">${metaPills([`${tracker.monthDone}/${tracker.monthExpected} no mes`, `${tracker.targetPerWeek} alvo por semana`])}</div>` : ""}
-    </article>
-  `;
 }
 
 function getTaskActionMessage(action, taskTitle = "") {
@@ -493,15 +423,7 @@ function renderChecklistRow(entry) {
       entry.sectionLabel || "",
       entry.period || "",
     ]);
-  const editKind = isTask
-    ? "task"
-    : entry.kind === "habit"
-      ? "habit"
-      : entry.kind === "routine"
-        ? "routine"
-        : entry.kind === "care"
-          ? "health-care"
-          : "diet-meal";
+  const editKind = "task";
 
   return `
     <article
@@ -682,17 +604,6 @@ function renderOrganizeTaskCard(task, options = {}) {
   `;
 }
 
-function renderHealthStats(stats = {}) {
-  return `
-    <div class="metric-grid four">
-      ${metricCard("Peso", stats.weight ? `${stats.weight} kg` : "Sem dado", stats.weightDelta ? `${stats.weightDelta > 0 ? "+" : ""}${stats.weightDelta} kg desde o ultimo registro` : "Sem variacao ainda")}
-      ${metricCard("Treinos", String(stats.workouts || 0), "Treinos registrados nesta semana")}
-      ${metricCard("Cuidados", stats.careDone || "0/0", "Checklist de saude do dia")}
-      ${metricCard("Dieta", stats.dietDone || "0/0", "Refeicoes seguidas hoje")}
-    </div>
-  `;
-}
-
 function renderAutoPilotList(autoPilot = []) {
   if (!autoPilot.length) {
     return emptyState("Sem decisoes automaticas relevantes agora.");
@@ -721,37 +632,9 @@ function renderAutoPilotList(autoPilot = []) {
   `;
 }
 
-function renderHabitWeekMatrixCard(habit) {
-  return `
-    <article class="habit-week-card">
-      <div class="habit-week-head">
-        <div>
-          <strong>${escapeHtml(habit.title)}</strong>
-          <p>${habit.done}/${habit.targetPerWeek} na semana</p>
-        </div>
-        <button class="ghost-button small" data-action="open-editor" data-kind="habit" data-id="${habit.id}">Editar</button>
-      </div>
-      ${progressBar(habit.percent)}
-      <div class="habit-week-grid">
-        ${habit.week.map((day) => `
-          <button
-            class="habit-day-chip ${day.done ? "done" : ""} ${day.selected ? "selected" : ""}"
-            data-action="toggle-habit"
-            data-habit-id="${habit.id}"
-            data-date="${day.date}"
-          >
-            <span>${escapeHtml(day.shortLabel.slice(0, 2))}</span>
-            <strong>${day.done ? "OK" : "..."}</strong>
-          </button>
-        `).join("")}
-      </div>
-    </article>
-  `;
-}
-
 function renderAgendaKanbanTask(task, model) {
   return `
-    <article class="agenda-kanban-task" draggable="true" data-agenda-task="${task.id}">
+    <article class="agenda-kanban-task" draggable="true" data-agenda-task="${task.id}" data-agenda-drop-task="${task.id}" data-agenda-drop-date="${task.scheduledDate || ""}">
       <div class="task-card-top">
         <div>
           <strong>${escapeHtml(task.title)}</strong>
@@ -760,6 +643,7 @@ function renderAgendaKanbanTask(task, model) {
         ${badge(task.priority ? `P ${task.priority}` : `Score ${Math.round(task.score || 0)}`)}
       </div>
       <div class="meta-row">${metaPills([task.periodLabel || "", task.dueLabel ? `Prazo ${task.dueLabel}` : "", `${task.estimatedMinutes} min`])}</div>
+      <div class="agenda-drop-hint">Arraste entre os dias ou solte sobre outro card para reordenar.</div>
       <div class="field-grid two compact-inline-grid">
         <label class="field compact">
           <span>Dia</span>
@@ -778,6 +662,21 @@ function renderAgendaKanbanTask(task, model) {
         <button class="ghost-button small" data-action="open-editor" data-kind="task" data-id="${task.id}">Editar</button>
         <button class="ghost-button small" data-task-action="today" data-task-id="${task.id}">Hoje</button>
       </div>
+    </article>
+  `;
+}
+
+function renderAgendaBlockCard(block) {
+  return `
+    <article class="agenda-block-card">
+      <div class="task-card-top">
+        <div>
+          <strong>${escapeHtml(block.title)}</strong>
+          <p>Bloco interno • ${escapeHtml(block.period)}</p>
+        </div>
+        ${badge("Bloco")}
+      </div>
+      <div class="meta-row">${metaPills([`${block.startTime} - ${block.endTime}`, block.note || "Sem nota"])}</div>
     </article>
   `;
 }
@@ -852,16 +751,11 @@ function renderVoiceCaptureModal(voiceState, model) {
     checklist: [],
     notes: "",
     suggestedDayTypeId: "",
-    healthWeight: 0,
-    healthMeasures: {},
     reasons: [],
   };
-  const measures = draft.healthMeasures || {};
   const intentLabel = model.options.voiceIntents.find((entry) => entry.id === draft.intent)?.label || draft.intent;
   const destinationLabel = model.options.voiceDestinations.find((entry) => entry.id === draft.destination)?.label || draft.destination;
   const dayTypeLabel = model.options.dayTypes.find((type) => type.id === draft.suggestedDayTypeId)?.label || draft.suggestedDayTypeId;
-  const showHealthWeight = draft.intent === "register-weight";
-  const showHealthMeasures = draft.intent === "register-measure";
   const showDayType = draft.intent === "change-day-type";
 
   return `
@@ -910,7 +804,7 @@ function renderVoiceCaptureModal(voiceState, model) {
               <span class="page-kicker">Etapa 2</span>
               <strong>Intencao</strong>
               <div class="meta-row">${metaPills([intentLabel, destinationLabel])}</div>
-              <p class="muted-copy">O sistema tenta entender se voce quer criar tarefa, habito, registrar saude, mudar tipo de dia, agendar, delegar ou remarcar.</p>
+              <p class="muted-copy">O sistema tenta entender se voce quer criar tarefa, quebrar em checklist, mudar tipo de dia, agendar, delegar ou remarcar.</p>
             </article>
             <article class="reading-card">
               <span class="page-kicker">Etapa 3</span>
@@ -939,23 +833,6 @@ function renderVoiceCaptureModal(voiceState, model) {
             <div class="field-grid two">
               <label class="field"><span>Tipo de dia</span><select name="suggestedDayTypeId"><option value="">Sem sugestao</option>${model.options.dayTypes.map((type) => `<option value="${type.id}" ${draft.suggestedDayTypeId === type.id ? "selected" : ""}>${escapeHtml(type.label)}</option>`).join("")}</select></label>
               <label class="field"><span>Dia alvo</span><input type="date" name="scheduledDate" value="${escapeHtml(draft.scheduledDate || draft.dueDate || "")}" /></label>
-            </div>
-          ` : ""}
-
-          ${showHealthWeight ? `
-            <div class="field-grid two">
-              <label class="field"><span>Peso</span><input type="number" step="0.1" name="healthWeight" value="${escapeHtml(draft.healthWeight || "")}" /></label>
-              <label class="field"><span>Data do registro</span><input type="date" name="scheduledDate" value="${escapeHtml(draft.scheduledDate || draft.dueDate || "")}" /></label>
-            </div>
-          ` : ""}
-
-          ${showHealthMeasures ? `
-            <div class="field-grid five">
-              <label class="field"><span>Cintura</span><input type="number" step="0.1" name="waist" value="${escapeHtml(draft.waist ?? measures.waist ?? "")}" /></label>
-              <label class="field"><span>Peito</span><input type="number" step="0.1" name="chest" value="${escapeHtml(draft.chest ?? measures.chest ?? "")}" /></label>
-              <label class="field"><span>Quadril</span><input type="number" step="0.1" name="hip" value="${escapeHtml(draft.hip ?? measures.hip ?? "")}" /></label>
-              <label class="field"><span>Braco</span><input type="number" step="0.1" name="arm" value="${escapeHtml(draft.arm ?? measures.arm ?? "")}" /></label>
-              <label class="field"><span>Coxa</span><input type="number" step="0.1" name="thigh" value="${escapeHtml(draft.thigh ?? measures.thigh ?? "")}" /></label>
             </div>
           ` : ""}
 
@@ -1252,9 +1129,8 @@ function renderTodayPage(model, options = {}) {
         <div class="meta-row">${metaPills([
           `${model.todayChecklist.items.filter((item) => item.done).length} feito(s)`,
           `${model.todayChecklist.items.length} item(ns)`,
-          model.health.stats.careDone,
         ])}</div>
-        <p class="muted-copy">Rotina, habitos, saude e acompanhamento rapido em uma so visao.</p>
+        <p class="muted-copy">Checklist operacional do dia, ligado ao que realmente entrou na execucao.</p>
       </div>
       ${renderChecklistItems(model.todayChecklist.items, model.selectedDate)}
     `, model),
@@ -1302,7 +1178,7 @@ function renderTodayPage(model, options = {}) {
     <section class="today-hero">
       <div>
         <span class="page-kicker">${escapeHtml(model.selectedDay.type.label)}</span>
-        <h3>${escapeHtml(topPriorities[0]?.title || model.dashboard.currentSprint?.title || "Dia organizado para caber na sua rotina real")}</h3>
+  <h3>${escapeHtml(topPriorities[0]?.title || model.dashboard.currentSprint?.title || "Dia organizado para caber no que realmente importa")}</h3>
         <p>${escapeHtml(model.selectedDay.longLabel)} • ${model.selectedDay.totalLoad}/${model.selectedDay.totalCapacity} min • ${model.selectedDay.alerts} alerta(s)</p>
       </div>
       <div class="toolbar-row">
@@ -1493,81 +1369,6 @@ function renderProjectsPage(model) {
   return `<section class="page-grid two">${model.projects.map((project) => panel(project.name, `<p class="muted-copy">${escapeHtml(project.summary)}</p><div class="meta-row">${metaPills([`${project.openCount} abertas`, `${project.progress}% previsivel`])}</div>${taskList(project.nextTasks, { empty: "Sem tarefas abertas neste projeto." })}<div class="toolbar-row"><button class="ghost-button" data-action="open-editor" data-kind="project" data-id="${project.id}">Editar projeto</button></div>`)).join("")}</section>`;
 }
 
-function renderRoutinePage(model) {
-  const cards = {
-    today: layoutCard("routine", "today", "Checklist e ritmo do dia", `
-      <div class="routine-dual-grid">
-        <div class="reading-card">
-          <div class="panel-head">
-            <div><strong>Manha</strong><p>Base da casa, filhos e ajuste inicial do dia.</p></div>
-            <button class="ghost-button small" data-action="open-editor" data-kind="routine" data-id="new-routine">Novo item</button>
-          </div>
-          <div class="stack-list compact-stack">
-            ${model.routine.morning.map((item) => `<label class="check-row"><span>${escapeHtml(item.title)}</span><div class="task-actions compact-actions"><button class="tiny-button ${(item.doneToday || false) ? "ghost" : ""}" data-action="toggle-routine-inline" data-routine-id="${item.id}" data-date="${model.selectedDate}">${(item.doneToday || false) ? "Feito" : "Marcar"}</button><button class="ghost-button small" data-action="open-editor" data-kind="routine" data-id="${item.id}">Editar</button></div></label>`).join("") || emptyState("Sem itens de manha.")}
-          </div>
-        </div>
-        <div class="reading-card">
-          <div class="panel-head">
-            <div><strong>Noite</strong><p>Fechamento leve e preparo do proximo dia.</p></div>
-            <button class="ghost-button small" data-action="open-editor" data-kind="routine" data-id="new-routine">Novo item</button>
-          </div>
-          <div class="stack-list compact-stack">
-            ${model.routine.night.map((item) => `<label class="check-row"><span>${escapeHtml(item.title)}</span><div class="task-actions compact-actions"><button class="tiny-button ${(item.doneToday || false) ? "ghost" : ""}" data-action="toggle-routine-inline" data-routine-id="${item.id}" data-date="${model.selectedDate}">${(item.doneToday || false) ? "Feito" : "Marcar"}</button><button class="ghost-button small" data-action="open-editor" data-kind="routine" data-id="${item.id}">Editar</button></div></label>`).join("") || emptyState("Sem itens de noite.")}
-          </div>
-        </div>
-      </div>
-    `, model, { wide: true }),
-    habits: layoutCard("routine", "habits", "Habitos do dia", `
-      <div class="toolbar-row">
-        <button class="primary-button" data-action="open-editor" data-kind="habit" data-id="new-habit">Novo habito</button>
-        <span class="muted-copy">Tudo editavel e marcavel por dia.</span>
-      </div>
-      <div class="stack-list compact-stack">
-        ${model.routine.habits.map((habit) => `
-          <article class="habit-row">
-            <div>
-              <strong>${escapeHtml(habit.title)}</strong>
-              <p>${habit.done}/${habit.targetPerWeek} na semana</p>
-              ${progressBar(habit.percent)}
-            </div>
-            <div class="task-actions compact-actions">
-              <button class="secondary-button" data-action="toggle-habit" data-habit-id="${habit.id}" data-date="${model.selectedDate}">${habit.doneToday ? "Desmarcar hoje" : "Marcar hoje"}</button>
-              <button class="ghost-button small" data-action="open-editor" data-kind="habit" data-id="${habit.id}">Editar</button>
-            </div>
-          </article>
-        `).join("") || emptyState("Sem habitos cadastrados ainda.")}
-      </div>
-    `, model),
-    calendar: layoutCard("routine", "calendar", "Calendario simples dos habitos", `
-      <div class="stack-list compact-stack">
-        ${model.routine.habits.map((habit) => renderHabitWeekMatrixCard(habit, model.selectedDate)).join("") || emptyState("Sem habitos para acompanhar por semana.")}
-        ${model.routine.workoutTracker ? renderWeeklyTracker(model.routine.workoutTracker) : ""}
-      </div>
-    `, model),
-    energy: layoutCard("routine", "energy", "Energia e saude da semana", `
-      <div class="energy-strip">${[1, 2, 3, 4, 5].map((level) => `<button class="chip-button" data-action="set-energy" data-energy="${level}">${level}</button>`).join("")}</div>
-      <div class="stack-list compact-stack">
-        ${model.routine.careItems.map((item) => `
-          <label class="check-row">
-            <span>${escapeHtml(item.title)}</span>
-            <div class="task-actions compact-actions">
-              <button class="tiny-button ${item.doneToday ? "ghost" : ""}" data-action="toggle-care-inline" data-care-id="${item.id}" data-date="${model.selectedDate}">${item.doneToday ? "Feito" : "Marcar"}</button>
-              <button class="ghost-button small" data-action="open-editor" data-kind="health-care" data-id="${item.id}">Editar</button>
-            </div>
-          </label>
-        `).join("") || emptyState("Sem checklist de saude por aqui.")}
-      </div>
-      <div class="stack-list compact-stack">
-        ${model.routine.careTrackers.map((tracker) => renderWeeklyTracker(tracker)).join("") || ""}
-        ${model.routine.routineTrackers.map((tracker) => renderWeeklyTracker(tracker, { showSummary: false })).join("") || ""}
-      </div>
-      ${taskList(model.routine.healthTasks, { empty: "Sem tarefas de saude nesta semana." })}
-    `, model, { wide: true }),
-  };
-
-  return `<section class="layout-grid">${model.settings.layouts.routine.map((entry) => cards[entry.id]).filter(Boolean).join("")}</section>`;
-}
-
 function renderPlanningPage(model) {
   return `
     <section class="page-grid two">
@@ -1607,162 +1408,6 @@ function renderPlanningPage(model) {
   `;
 }
 
-function renderHealthPage(model) {
-  const latestMeasures = model.health.latestMeasures;
-  const cards = {
-    overview: layoutCard("health", "overview", "Saude do dia e evolucao", `
-      ${renderHealthStats(model.health.stats)}
-      <div class="health-quick-grid">
-        <form class="form-grid mini-form" data-form="health-weight">
-          <div class="panel-head">
-            <div><h3>Peso</h3><p>Registro rapido para manter frequencia.</p></div>
-            <button class="ghost-button small" type="button" data-action="open-editor" data-kind="health-weight" data-id="new-health-weight">Abrir editor</button>
-          </div>
-          <div class="field-grid three">
-            <label class="field compact"><span>Data</span><input type="date" name="date" value="${escapeHtml(model.selectedDate)}" /></label>
-            <label class="field compact"><span>Peso</span><input type="number" step="0.1" name="weight" /></label>
-            <label class="field compact"><span>Nota</span><input name="note" /></label>
-          </div>
-          <button class="primary-button" type="submit">Salvar peso</button>
-        </form>
-        <form class="form-grid mini-form" data-form="health-measure">
-          <div class="panel-head">
-            <div><h3>Medidas</h3><p>Cintura, peito, quadril, braco e coxa.</p></div>
-            <button class="ghost-button small" type="button" data-action="open-editor" data-kind="health-measure" data-id="new-health-measure">Abrir editor</button>
-          </div>
-          <div class="field-grid three">
-            <label class="field compact"><span>Data</span><input type="date" name="date" value="${escapeHtml(model.selectedDate)}" /></label>
-            <label class="field compact"><span>Cintura</span><input type="number" step="0.1" name="waist" /></label>
-            <label class="field compact"><span>Peito</span><input type="number" step="0.1" name="chest" /></label>
-          </div>
-          <div class="field-grid three">
-            <label class="field compact"><span>Quadril</span><input type="number" step="0.1" name="hip" /></label>
-            <label class="field compact"><span>Braco</span><input type="number" step="0.1" name="arm" /></label>
-            <label class="field compact"><span>Coxa</span><input type="number" step="0.1" name="thigh" /></label>
-          </div>
-          <button class="primary-button" type="submit">Salvar medidas</button>
-        </form>
-      </div>
-    `, model, { wide: true }),
-    care: layoutCard("health", "care", "Checklist de cuidados", `
-      <form class="form-grid mini-form" data-form="health-care">
-        <div class="field-grid two">
-          <label class="field compact"><span>Novo item</span><input name="title" placeholder="Beber agua, suplemento, alongamento..." /></label>
-          <label class="field compact"><span>Nota</span><input name="note" placeholder="Meta ou detalhe" /></label>
-        </div>
-        <button class="primary-button" type="submit">Adicionar cuidado</button>
-      </form>
-      <div class="stack-list compact-stack">
-        ${model.health.careItems.map((item) => `
-          <article class="checklist-card ${item.doneToday ? "done" : ""}">
-            <div>
-              <strong>${escapeHtml(item.title)}</strong>
-              <p>${escapeHtml(item.note || "Rotina de cuidado diario")}</p>
-            </div>
-            <div class="task-actions compact-actions">
-              <button class="tiny-button ${item.doneToday ? "ghost" : ""}" data-action="toggle-care-inline" data-care-id="${item.id}" data-date="${model.selectedDate}">${item.doneToday ? "Feito" : "Marcar"}</button>
-              <button class="ghost-button small" data-action="open-editor" data-kind="health-care" data-id="${item.id}">Editar</button>
-            </div>
-          </article>
-        `).join("") || emptyState("Sem itens de cuidado ainda.")}
-      </div>
-      <div class="stack-list compact-stack">
-        ${model.health.careTrackers.map((tracker) => renderWeeklyTracker(tracker)).join("") || ""}
-      </div>
-    `, model),
-    diet: layoutCard("health", "diet", "Dieta e refeicoes", `
-      <form class="form-grid mini-form" data-form="diet-meal">
-        <div class="field-grid two">
-          <label class="field compact"><span>Refeicao</span><select name="mealKey"><option value="breakfast">Cafe da manha</option><option value="lunch">Almoco</option><option value="dinner">Janta</option><option value="snack">Lanche</option><option value="custom">Personalizada</option></select></label>
-          <label class="field compact"><span>Titulo</span><input name="title" placeholder="Cafe da manha proteico" /></label>
-        </div>
-        <label class="field compact"><span>Plano alimentar</span><input name="plan" placeholder="Proteina + fruta + cafe" /></label>
-        <label class="field compact"><span>Checklist</span><textarea name="checklist" placeholder="Uma linha por item"></textarea></label>
-        <label class="field compact"><span>Observacao</span><input name="note" /></label>
-        <button class="primary-button" type="submit">Salvar refeicao</button>
-      </form>
-      <div class="stack-list compact-stack">
-        ${model.health.dietMeals.map((meal) => `
-          <article class="reading-card">
-            <div class="task-card-top">
-              <div>
-                <strong>${escapeHtml(meal.title)}</strong>
-                <p>${escapeHtml(meal.plan || meal.mealKey)}</p>
-              </div>
-              ${badge(meal.doneToday ? "Seguida hoje" : "Pendente", meal.doneToday ? "success" : "")}
-            </div>
-            ${meal.checklist?.length ? `<ul class="mini-list">${meal.checklist.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
-            ${meal.note ? `<p class="muted-copy">${escapeHtml(meal.note)}</p>` : ""}
-            <div class="task-actions compact-actions">
-              <button class="tiny-button ${meal.doneToday ? "ghost" : ""}" data-action="toggle-diet-inline" data-diet-id="${meal.id}" data-date="${model.selectedDate}">${meal.doneToday ? "Desmarcar" : "Marcar como seguida"}</button>
-              <button class="ghost-button small" data-action="open-editor" data-kind="diet-meal" data-id="${meal.id}">Editar</button>
-            </div>
-          </article>
-        `).join("") || emptyState("Sem refeicoes cadastradas ainda.")}
-      </div>
-    `, model),
-    measurements: layoutCard("health", "measurements", "Peso e medidas recentes", `
-      <div class="reading-card">
-        <strong>Ultimo registro de medidas</strong>
-        <p>${latestMeasures ? escapeHtml(latestMeasures.date) : "Sem medidas ainda"}</p>
-        ${latestMeasures ? `<div class="meta-row">${metaPills([
-          `Cintura ${latestMeasures.waist || 0}`,
-          `Peito ${latestMeasures.chest || 0}`,
-          `Quadril ${latestMeasures.hip || 0}`,
-          `Braco ${latestMeasures.arm || 0}`,
-          `Coxa ${latestMeasures.thigh || 0}`,
-        ])}</div>` : ""}
-      </div>
-      <div class="stack-list compact-stack">
-        ${model.health.weightLogs.map((entry) => `<article class="summary-row"><div><strong>${entry.weight} kg</strong><p>${escapeHtml(entry.date)}</p></div><button class="ghost-button small" data-action="open-editor" data-kind="health-weight" data-id="${entry.id}">Editar</button></article>`).join("") || emptyState("Sem historico de peso ainda.")}
-        ${model.health.measureLogs.map((entry) => `<article class="summary-row"><div><strong>Medidas</strong><p>${escapeHtml(entry.date)}</p></div><button class="ghost-button small" data-action="open-editor" data-kind="health-measure" data-id="${entry.id}">Editar</button></article>`).join("") || ""}
-      </div>
-    `, model),
-    workouts: layoutCard("health", "workouts", "Treinos e disciplina", `
-      <form class="form-grid mini-form" data-form="health-workout">
-        <div class="field-grid two">
-          <label class="field compact"><span>Data</span><input type="date" name="date" value="${escapeHtml(model.selectedDate)}" /></label>
-          <label class="field compact"><span>Treino</span><input name="title" placeholder="Treino A em casa" /></label>
-        </div>
-        <div class="field-grid three">
-          <label class="field compact"><span>Tipo</span><input name="type" value="casa" /></label>
-          <label class="field compact"><span>Duracao</span><input type="number" name="duration" value="30" /></label>
-          <label class="field compact"><span>Status</span><select name="status"><option value="planned">Planejado</option><option value="done">Concluido</option><option value="skipped">Pulou</option></select></label>
-        </div>
-        <label class="field compact"><span>Nota</span><input name="note" /></label>
-        <button class="primary-button" type="submit">Salvar treino</button>
-      </form>
-      <div class="stack-list compact-stack">
-        ${model.health.workouts.map((entry) => `<article class="summary-row"><div><strong>${escapeHtml(entry.title)}</strong><p>${escapeHtml(entry.date)} • ${escapeHtml(entry.type)} • ${entry.duration} min</p></div><button class="ghost-button small" data-action="open-editor" data-kind="health-workout" data-id="${entry.id}">Editar</button></article>`).join("") || emptyState("Sem treinos registrados ainda.")}
-      </div>
-      ${model.health.workoutTracker ? renderWeeklyTracker(model.health.workoutTracker) : ""}
-      ${taskList(model.health.healthTasks, { empty: "Sem tarefas de saude em aberto." })}
-    `, model),
-    evolution: layoutCard("health", "evolution", "Evolucao simples", `
-      <div class="evolution-grid">
-        <div class="reading-card">
-          <strong>Peso por data</strong>
-          <div class="stack-list compact-stack">
-            ${model.health.evolution.weights.map((entry) => `<div class="evolution-row"><span>${escapeHtml(entry.date)}</span><strong>${entry.weight} kg</strong></div>`).join("") || emptyState("Sem pontos de peso ainda.")}
-          </div>
-        </div>
-        <div class="reading-card">
-          <strong>Medidas por data</strong>
-          <div class="stack-list compact-stack">
-            ${model.health.evolution.measures.map((entry) => `<div class="evolution-row"><span>${escapeHtml(entry.date)}</span><strong>Cintura ${entry.waist || 0}</strong></div>`).join("") || emptyState("Sem pontos de medida ainda.")}
-          </div>
-        </div>
-      </div>
-      <div class="callout success">
-        <strong>Integrada ao resto do sistema.</strong>
-        <p>Os itens de saude tambem aparecem na Rotina e no checklist do dia em Hoje.</p>
-      </div>
-    `, model, { wide: true }),
-  };
-
-  return `<section class="layout-grid">${model.settings.layouts.health.map((entry) => cards[entry.id]).filter(Boolean).join("")}</section>`;
-}
-
 function renderAgendaPage(model) {
   const cards = {
     week: layoutCard("agenda", "week", "Kanban semanal editavel", `
@@ -1782,7 +1427,8 @@ function renderAgendaPage(model) {
               ${day.tasks.length
                 ? day.tasks.map((task) => renderAgendaKanbanTask(task, model)).join("")
                 : emptyState("Dia livre para encaixar algo.")}
-              ${day.blocks?.length ? `<div class="calendar-events">${day.blocks.map((entry) => `<div class="calendar-event internal"><small>${escapeHtml(entry.startTime)} - ${escapeHtml(entry.endTime)}</small><strong>${escapeHtml(entry.title)}</strong></div>`).join("")}</div>` : ""}
+              ${day.blocks?.length ? day.blocks.map((entry) => renderAgendaBlockCard(entry)).join("") : ""}
+              <div class="agenda-drop-tail" data-agenda-date="${day.date}">Soltar no fim do dia</div>
             </div>
           </article>
         `).join("")}
@@ -1826,14 +1472,13 @@ function renderSettingsPage(model) {
             <label class="field"><span>Tom visual</span><select name="accentTone"><option value="forest" ${model.settings.accentTone === "forest" ? "selected" : ""}>Forest</option><option value="meadow" ${model.settings.accentTone === "meadow" ? "selected" : ""}>Meadow</option><option value="stone" ${model.settings.accentTone === "stone" ? "selected" : ""}>Stone</option></select></label>
           </div>
           <div class="field-grid three">
-            <label class="field"><span>Saude</span><input type="number" step="0.01" name="healthProtection" value="${escapeHtml(model.settings.prioritization.healthProtection)}" /></label>
             <label class="field"><span>Mudanca</span><input type="number" step="0.01" name="moveProtection" value="${escapeHtml(model.settings.prioritization.moveProtection)}" /></label>
             <label class="field"><span>Familia</span><input type="number" step="0.01" name="familyProtection" value="${escapeHtml(model.settings.prioritization.familyProtection)}" /></label>
+            <label class="field"><span>Limite de carga</span><input type="number" step="0.01" name="overloadLimit" value="${escapeHtml(model.settings.prioritization.overloadLimit)}" /></label>
           </div>
-          <div class="field-grid three">
+          <div class="field-grid two">
             <label class="field"><span>Futuro</span><input type="number" step="0.01" name="futureFocus" value="${escapeHtml(model.settings.prioritization.futureFocus)}" /></label>
             <label class="field"><span>Delegacao</span><input type="number" step="0.01" name="delegationBias" value="${escapeHtml(model.settings.prioritization.delegationBias)}" /></label>
-            <label class="field"><span>Limite de carga</span><input type="number" step="0.01" name="overloadLimit" value="${escapeHtml(model.settings.prioritization.overloadLimit)}" /></label>
           </div>
           <label class="field"><span>Linha de raciocinio</span><textarea name="reasoningLine">${escapeHtml(model.settings.reasoningLine)}</textarea></label>
           <div class="callout">
@@ -1852,7 +1497,7 @@ function renderSettingsPage(model) {
           </div>
           <label class="field">
             <span>Associacoes frequentes</span>
-            <textarea name="voiceAssociations" placeholder="gravar => projeto:project-conteudo, contexto:creative, intencao:create-task, destino:project&#10;peso => area:area-health, contexto:health, intencao:register-weight, destino:health">${escapeHtml(model.settings.voiceAssistant.frequentAssociationsText || "")}</textarea>
+            <textarea name="voiceAssociations" placeholder="gravar => projeto:project-conteudo, contexto:creative, intencao:create-task, destino:project&#10;reuniao => area:area-work, contexto:planning, intencao:schedule, destino:agenda">${escapeHtml(model.settings.voiceAssistant.frequentAssociationsText || "")}</textarea>
           </label>
           <button class="primary-button" type="submit">Salvar configuracoes</button>
         </form>
@@ -1913,13 +1558,7 @@ function renderEditorModal(editorView, options) {
     objective: `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><div class="field-grid three"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Projeto</span><select name="projectId"><option value="">Sem projeto</option>${projectOptions}</select></label><label class="field"><span>Progresso</span><input type="number" name="progress" value="${escapeHtml(entity.progress || 0)}" /></label></div><label class="field"><span>Prazo</span><input type="date" name="dueDate" value="${escapeHtml(entity.dueDate || "")}" /></label><label class="field"><span>Descricao</span><textarea name="description">${escapeHtml(entity.description || "")}</textarea></label>`,
     sprint: `<div class="field-grid two"><label class="field"><span>Nome</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><label class="field"><span>Slot</span><select name="slot">${[1, 2, 3, 4].map((slot) => `<option value="${slot}" ${Number(entity.slot) === slot ? "selected" : ""}>Sprint ${slot}</option>`).join("")}</select></label></div><div class="field-grid three"><label class="field"><span>Inicio</span><input type="date" name="startDate" value="${escapeHtml(entity.startDate || "")}" /></label><label class="field"><span>Fim</span><input type="date" name="endDate" value="${escapeHtml(entity.endDate || "")}" /></label><label class="field"><span>Status</span><select name="status"><option value="planned" ${entity.status === "planned" ? "selected" : ""}>Planejado</option><option value="upcoming" ${entity.status === "upcoming" ? "selected" : ""}>Proximo</option><option value="current" ${entity.status === "current" ? "selected" : ""}>Atual</option></select></label></div><label class="field"><span>Periodo</span><input name="periodLabel" value="${escapeHtml(entity.periodLabel || "")}" /></label><label class="field"><span>Descricao</span><textarea name="description">${escapeHtml(entity.description || entity.theme || "")}</textarea></label><label class="field"><span>Prioridades do sprint</span><textarea name="priorities">${escapeHtml((entity.priorities || []).join("\n"))}</textarea></label><label class="field"><span>Projetos relacionados</span><textarea name="projectIds">${escapeHtml((entity.projectIds || []).join("\n"))}</textarea></label><label class="field"><span>Objetivos relacionados</span><textarea name="objectiveIds">${escapeHtml((entity.objectiveIds || []).join("\n"))}</textarea></label><label class="field"><span>Palavras-chave do sprint</span><textarea name="keywords">${escapeHtml((entity.keywords || []).join("\n"))}</textarea></label><label class="field"><span>Areas priorizadas</span><textarea name="priorityAreas">${escapeHtml((entity.priorityAreas || []).join("\n"))}</textarea></label>`,
     habit: `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><div class="field-grid two"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Meta semanal</span><input type="number" name="targetPerWeek" value="${escapeHtml(entity.targetPerWeek || 3)}" /></label></div><label class="field"><span>Dias preferidos</span><input name="preferredWeekdays" value="${escapeHtml((entity.preferredWeekdays || []).join(", "))}" /></label><label class="field"><span>Nota</span><textarea name="note">${escapeHtml(entity.note || "")}</textarea></label>`,
-    block: `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><div class="field-grid three"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Data</span><input type="date" name="date" value="${escapeHtml(entity.date || "")}" /></label><label class="field"><span>Periodo</span><select name="period">${periodOptions}</select></label></div><div class="field-grid two"><label class="field"><span>Inicio</span><input type="time" name="startTime" value="${escapeHtml(entity.startTime || "09:00")}" /></label><label class="field"><span>Fim</span><input type="time" name="endTime" value="${escapeHtml(entity.endTime || "10:00")}" /></label></div><label class="field"><span>Tipo</span><input name="kind" value="${escapeHtml(entity.kind || "routine")}" /></label><label class="field"><span>Nota</span><textarea name="note">${escapeHtml(entity.note || "")}</textarea></label>`,
-    routine: `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><div class="field-grid three"><label class="field"><span>Periodo</span><select name="period">${periodOptions}</select></label><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Ordem</span><input type="number" name="order" value="${escapeHtml(entity.order || 1)}" /></label></div><label class="field"><span>Nota</span><textarea name="note">${escapeHtml(entity.note || "")}</textarea></label><div class="checkbox-row"><label><input type="checkbox" name="active" ${entity.active ? "checked" : ""}/> Ativo</label><label><input type="checkbox" name="recurring" ${entity.recurring ? "checked" : ""}/> Recorrente</label></div>`,
-    "health-weight": `<div class="field-grid three"><label class="field"><span>Data</span><input type="date" name="date" value="${escapeHtml(entity.date || "")}" /></label><label class="field"><span>Peso</span><input type="number" step="0.1" name="weight" value="${escapeHtml(entity.weight || 0)}" /></label><label class="field"><span>Nota</span><input name="note" value="${escapeHtml(entity.note || "")}" /></label></div>`,
-    "health-measure": `<label class="field"><span>Data</span><input type="date" name="date" value="${escapeHtml(entity.date || "")}" /></label><div class="field-grid three"><label class="field"><span>Cintura</span><input type="number" step="0.1" name="waist" value="${escapeHtml(entity.waist || 0)}" /></label><label class="field"><span>Peito</span><input type="number" step="0.1" name="chest" value="${escapeHtml(entity.chest || 0)}" /></label><label class="field"><span>Quadril</span><input type="number" step="0.1" name="hip" value="${escapeHtml(entity.hip || 0)}" /></label></div><div class="field-grid two"><label class="field"><span>Braco</span><input type="number" step="0.1" name="arm" value="${escapeHtml(entity.arm || 0)}" /></label><label class="field"><span>Coxa</span><input type="number" step="0.1" name="thigh" value="${escapeHtml(entity.thigh || 0)}" /></label></div><label class="field"><span>Nota</span><input name="note" value="${escapeHtml(entity.note || "")}" /></label>`,
-    "health-care": `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><label class="field"><span>Nota</span><textarea name="note">${escapeHtml(entity.note || "")}</textarea></label>`,
-    "health-workout": `<div class="field-grid two"><label class="field"><span>Data</span><input type="date" name="date" value="${escapeHtml(entity.date || "")}" /></label><label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label></div><div class="field-grid three"><label class="field"><span>Tipo</span><input name="type" value="${escapeHtml(entity.type || "")}" /></label><label class="field"><span>Duracao</span><input type="number" name="duration" value="${escapeHtml(entity.duration || 30)}" /></label><label class="field"><span>Status</span><input name="status" value="${escapeHtml(entity.status || "planned")}" /></label></div><label class="field"><span>Nota</span><textarea name="note">${escapeHtml(entity.note || "")}</textarea></label>`,
-    "diet-meal": `<div class="field-grid two"><label class="field"><span>Refeicao</span><input name="mealKey" value="${escapeHtml(entity.mealKey || "")}" /></label><label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label></div><label class="field"><span>Plano</span><textarea name="plan">${escapeHtml(entity.plan || "")}</textarea></label><label class="field"><span>Checklist</span><textarea name="checklist">${escapeHtml((entity.checklist || []).join("\n"))}</textarea></label><label class="field"><span>Nota</span><textarea name="note">${escapeHtml(entity.note || "")}</textarea></label>`,
+    block: `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><div class="field-grid three"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Data</span><input type="date" name="date" value="${escapeHtml(entity.date || "")}" /></label><label class="field"><span>Periodo</span><select name="period">${periodOptions}</select></label></div><div class="field-grid two"><label class="field"><span>Inicio</span><input type="time" name="startTime" value="${escapeHtml(entity.startTime || "09:00")}" /></label><label class="field"><span>Fim</span><input type="time" name="endTime" value="${escapeHtml(entity.endTime || "10:00")}" /></label></div><label class="field"><span>Tipo</span><input name="kind" value="${escapeHtml(entity.kind || "focus")}" /></label><label class="field"><span>Nota</span><textarea name="note">${escapeHtml(entity.note || "")}</textarea></label>`,
     "day-override": `<label class="field"><span>Data</span><input type="date" name="date" value="${escapeHtml(entity.date || "")}" /></label><label class="field"><span>Tipo de dia</span><select name="typeId">${dayTypeOptions}</select></label><label class="field"><span>Nota</span><textarea name="note">${escapeHtml(entity.note || "")}</textarea></label>`,
   };
   return `<div class="modal-shell" data-action="close-editor-backdrop"><div class="modal-card" role="dialog" aria-modal="true"><div class="panel-head"><h3>Editar ${escapeHtml(kind)}</h3><button class="ghost-button" type="button" data-action="close-editor">Fechar</button></div>${actions}<form class="form-grid" data-form="entity-editor"><input type="hidden" name="kind" value="${escapeHtml(kind)}" /><input type="hidden" name="id" value="${escapeHtml(entity.id || "")}" />${fieldMap[kind] || fieldMap["day-override"]}<div class="toolbar-row"><button class="primary-button" type="submit">Salvar</button><button class="ghost-button" type="button" data-action="close-editor">Cancelar</button></div></form></div></div>`;
@@ -1943,8 +1582,6 @@ function renderActivePage(model, options = {}) {
     case "organize": return renderOrganizePage(model, options);
     case "areas": return renderAreasPage(model);
     case "projects": return renderProjectsPage(model);
-    case "routine": return renderRoutinePage(model);
-    case "health": return renderHealthPage(model);
     case "planning": return renderPlanningPage(model);
     case "agenda": return renderAgendaPage(model);
     case "settings": return renderSettingsPage(model);
@@ -1969,8 +1606,6 @@ function renderLayoutSummary(layouts = {}) {
     today: "Hoje",
     prioritize: "Priorizar",
     organize: "Organizar",
-    routine: "Rotina",
-    health: "Saude",
     agenda: "Agenda",
   };
   return Object.entries(layouts).map(([page, entries]) => `
@@ -2232,32 +1867,6 @@ export class LifeOSApp {
     if (action === "set-priority-method") { this.state = setPriorityMethod(this.state, trigger.dataset.method); await this.persist("Metodo atualizado."); return; }
     if (action === "set-active-sprint") { this.state = setActiveSprint(this.state, trigger.dataset.sprintId); await this.persist("Sprint atualizada."); return; }
     if (action === "set-energy") { this.state = setWeeklyEnergy(this.state, trigger.dataset.energy); await this.persist("Energia semanal ajustada."); return; }
-    if (action === "toggle-habit") { this.state = toggleHabitForDate(this.state, trigger.dataset.habitId, trigger.dataset.date || today); await this.persist("Habito atualizado."); return; }
-    if (action === "toggle-habit-inline") {
-      const habitTitle = this.state.habits.find((item) => item.id === trigger.dataset.habitId)?.title || "";
-      this.state = toggleHabitForDate(this.state, trigger.dataset.habitId, trigger.dataset.date || today);
-      await this.persist(habitTitle ? `Habito atualizado: ${habitTitle}.` : "Habito atualizado.");
-      return;
-    }
-    if (action === "toggle-routine-inline") {
-      const routineItems = [...(this.state.routines.morning || []), ...(this.state.routines.night || [])];
-      const routineTitle = routineItems.find((item) => item.id === trigger.dataset.routineId)?.title || "";
-      this.state = toggleRoutineForDate(this.state, trigger.dataset.routineId, trigger.dataset.date || today);
-      await this.persist(routineTitle ? `Checklist de rotina atualizado: ${routineTitle}.` : "Checklist de rotina atualizado.");
-      return;
-    }
-    if (action === "toggle-care-inline") {
-      const careTitle = this.state.health.careItems.find((item) => item.id === trigger.dataset.careId)?.title || "";
-      this.state = toggleHealthCareForDate(this.state, trigger.dataset.careId, trigger.dataset.date || today);
-      await this.persist(careTitle ? `Checklist de saude atualizado: ${careTitle}.` : "Checklist de saude atualizado.");
-      return;
-    }
-    if (action === "toggle-diet-inline") {
-      const dietTitle = this.state.health.dietMeals.find((item) => item.id === trigger.dataset.dietId)?.title || "";
-      this.state = toggleDietMealForDate(this.state, trigger.dataset.dietId, trigger.dataset.date || today);
-      await this.persist(dietTitle ? `Dieta do dia atualizada: ${dietTitle}.` : "Dieta do dia atualizada.");
-      return;
-    }
     if (action === "toggle-task-subtask") {
       const taskTitle = this.state.tasks.find((task) => task.id === trigger.dataset.taskId)?.title || "";
       this.state = toggleTaskSubtask(this.state, trigger.dataset.taskId, trigger.dataset.subtaskIndex);
@@ -2362,11 +1971,6 @@ export class LifeOSApp {
       return;
     }
     if (form.dataset.form === "google-config") { this.state = saveGoogleCalendarConfig(this.state, formDataToObject(form)); await this.persist("Configuracao do Google salva."); return; }
-    if (form.dataset.form === "health-weight") { this.state = saveHealthWeight(this.state, formDataToObject(form)); form.reset(); await this.persist("Peso salvo."); return; }
-    if (form.dataset.form === "health-measure") { this.state = saveHealthMeasure(this.state, formDataToObject(form)); form.reset(); await this.persist("Medidas salvas."); return; }
-    if (form.dataset.form === "health-care") { this.state = saveHealthCareItem(this.state, formDataToObject(form)); form.reset(); await this.persist("Item de cuidado salvo."); return; }
-    if (form.dataset.form === "health-workout") { this.state = saveHealthWorkout(this.state, formDataToObject(form)); form.reset(); await this.persist("Treino salvo."); return; }
-    if (form.dataset.form === "diet-meal") { this.state = saveDietMeal(this.state, formDataToObject(form)); form.reset(); await this.persist("Refeicao salva."); return; }
     if (form.dataset.form === "entity-editor") { const payload = formDataToObject(form); this.state = saveEntity(this.state, payload.kind, payload); await this.persist("Item salvo."); return; }
     if (form.dataset.form === "settings-form") { this.state = saveSettings(this.state, formDataToObject(form)); await this.persist("Configuracoes salvas."); }
   }
@@ -2377,6 +1981,7 @@ export class LifeOSApp {
       this.dragItem = { kind: "checklist-task", taskId: checklistItem.dataset.checklistTask };
       checklistItem.classList.add("dragging");
       event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", checklistItem.dataset.checklistTask || "");
       return;
     }
 
@@ -2385,6 +1990,7 @@ export class LifeOSApp {
       this.dragItem = { kind: "organize-task", taskId: organizeItem.dataset.organizeTask };
       organizeItem.classList.add("dragging");
       event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", organizeItem.dataset.organizeTask || "");
       return;
     }
 
@@ -2393,6 +1999,7 @@ export class LifeOSApp {
       this.dragItem = { kind: "agenda-task", taskId: agendaTask.dataset.agendaTask };
       agendaTask.classList.add("dragging");
       event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", agendaTask.dataset.agendaTask || "");
       return;
     }
 
@@ -2401,6 +2008,7 @@ export class LifeOSApp {
     this.dragItem = { kind: "layout", page: item.dataset.layoutPage, cardId: item.dataset.layoutCard };
     item.classList.add("dragging");
     event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", item.dataset.layoutCard || "");
   }
 
   handleDragOver(event) {
@@ -2431,11 +2039,17 @@ export class LifeOSApp {
     }
 
     if (this.dragItem.kind === "agenda-task") {
+      const targetTask = event.target.closest("[data-agenda-drop-task]");
       const day = event.target.closest("[data-agenda-date]");
-      if (!day) return;
+      if (!day && !targetTask) return;
       event.preventDefault();
       this.root.querySelectorAll(".agenda-day-drop-zone.drag-target").forEach((entry) => entry.classList.remove("drag-target"));
-      day.classList.add("drag-target");
+      this.root.querySelectorAll(".agenda-kanban-task.drag-target").forEach((entry) => entry.classList.remove("drag-target"));
+      if (targetTask && targetTask.dataset.agendaDropTask !== this.dragItem.taskId) {
+        targetTask.classList.add("drag-target");
+      } else if (day) {
+        day.classList.add("drag-target");
+      }
     }
   }
 
@@ -2477,10 +2091,21 @@ export class LifeOSApp {
     }
 
     if (this.dragItem.kind === "agenda-task") {
+      const targetTask = event.target.closest("[data-agenda-drop-task]");
       const day = event.target.closest("[data-agenda-date]");
-      if (!day) return;
-      this.state = updateTaskSchedule(this.state, this.dragItem.taskId, { scheduledDate: day.dataset.agendaDate });
+      if (!day && !targetTask) return;
+      if (targetTask && targetTask.dataset.agendaDropTask !== this.dragItem.taskId) {
+        this.state = reorderAgendaTask(
+          this.state,
+          this.dragItem.taskId,
+          targetTask.dataset.agendaDropTask,
+          targetTask.dataset.agendaDropDate || day?.dataset.agendaDate || "",
+        );
+      } else if (day) {
+        this.state = reorderAgendaTask(this.state, this.dragItem.taskId, "", day.dataset.agendaDate);
+      }
       this.root.querySelectorAll(".agenda-day-drop-zone.drag-target").forEach((entry) => entry.classList.remove("drag-target"));
+      this.root.querySelectorAll(".agenda-kanban-task.drag-target").forEach((entry) => entry.classList.remove("drag-target"));
       this.dragItem = null;
       await this.persist("Tarefa movida na agenda semanal.");
       return;
@@ -2498,6 +2123,7 @@ export class LifeOSApp {
     this.root.querySelectorAll(".organize-drop-zone.drag-target").forEach((card) => card.classList.remove("drag-target"));
     this.root.querySelectorAll("[data-agenda-task].dragging").forEach((card) => card.classList.remove("dragging"));
     this.root.querySelectorAll(".agenda-day-drop-zone.drag-target").forEach((card) => card.classList.remove("drag-target"));
+    this.root.querySelectorAll(".agenda-kanban-task.drag-target").forEach((card) => card.classList.remove("drag-target"));
   }
 
   async handleGoogleConnect() {

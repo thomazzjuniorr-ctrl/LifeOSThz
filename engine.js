@@ -48,20 +48,6 @@ const DEFAULT_LAYOUTS = {
     { id: "board", width: "full", height: "tall", frame: null },
     { id: "summary", width: "full", height: "compact", frame: null },
   ],
-  routine: [
-    { id: "today", width: "full", height: "regular", frame: null },
-    { id: "habits", width: "medium", height: "regular", frame: null },
-    { id: "calendar", width: "medium", height: "regular", frame: null },
-    { id: "energy", width: "full", height: "compact", frame: null },
-  ],
-  health: [
-    { id: "overview", width: "full", height: "compact", frame: null },
-    { id: "care", width: "medium", height: "regular", frame: null },
-    { id: "diet", width: "medium", height: "regular", frame: null },
-    { id: "measurements", width: "medium", height: "regular", frame: null },
-    { id: "workouts", width: "medium", height: "regular", frame: null },
-    { id: "evolution", width: "full", height: "regular", frame: null },
-  ],
   agenda: [
     { id: "week", width: "full", height: "tall", frame: null },
     { id: "editor", width: "full", height: "regular", frame: null },
@@ -103,7 +89,6 @@ const TASK_TYPES = [
   "task",
   "strategic",
   "work",
-  "health",
   "review",
   "planning",
   "family",
@@ -121,7 +106,6 @@ const TASK_CONTEXTS = [
   "deep-work",
   "admin",
   "planning",
-  "health",
   "home",
   "outside",
   "street",
@@ -130,20 +114,16 @@ const TASK_CONTEXTS = [
 
 const VOICE_INTENTS = {
   "create-task": { label: "Criar tarefa", destination: "inbox" },
-  "create-habit": { label: "Criar habito", destination: "routine" },
-  "add-checklist-item": { label: "Adicionar item de checklist", destination: "routine" },
+  "create-habit": { label: "Criar habito", destination: "inbox" },
+  "add-checklist-item": { label: "Adicionar item de checklist", destination: "inbox" },
   "change-day-type": { label: "Mudar tipo de dia", destination: "days" },
   schedule: { label: "Agendar", destination: "agenda" },
-  "register-weight": { label: "Registrar peso", destination: "health" },
-  "register-measure": { label: "Registrar medida", destination: "health" },
   delegate: { label: "Delegar", destination: "project" },
   reschedule: { label: "Remarcar", destination: "agenda" },
 };
 
 const VOICE_DESTINATIONS = {
   inbox: "Inbox",
-  health: "Saude",
-  routine: "Rotina",
   project: "Projeto",
   agenda: "Agenda",
   days: "Dias",
@@ -219,8 +199,6 @@ function normalizeLayouts(layouts = DEFAULT_LAYOUTS, fallbackLayouts = DEFAULT_L
     today: normalizeLayoutPage(layouts?.today, fallbackLayouts.today || DEFAULT_LAYOUTS.today),
     prioritize: normalizeLayoutPage(layouts?.prioritize, fallbackLayouts.prioritize || DEFAULT_LAYOUTS.prioritize),
     organize: normalizeLayoutPage(layouts?.organize, fallbackLayouts.organize || DEFAULT_LAYOUTS.organize),
-    routine: normalizeLayoutPage(layouts?.routine, fallbackLayouts.routine || DEFAULT_LAYOUTS.routine),
-    health: normalizeLayoutPage(layouts?.health, fallbackLayouts.health || DEFAULT_LAYOUTS.health),
     agenda: normalizeLayoutPage(layouts?.agenda, fallbackLayouts.agenda || DEFAULT_LAYOUTS.agenda),
   };
 }
@@ -365,13 +343,12 @@ function defaultVoiceAssistantSettings() {
       { term: "cliente", value: "area-work" },
       { term: "filhos", value: "area-family" },
       { term: "casa", value: "area-home" },
-      { term: "saude", value: "area-health" },
+      { term: "mudanca", value: "area-move" },
     ],
     frequentAssociations: [
       { term: "gravar", target: { projectId: "project-conteudo", areaId: "area-work", context: "creative", intent: "create-task", destination: "project" } },
       { term: "cliente", target: { areaId: "area-work", context: "admin", intent: "create-task", destination: "inbox" } },
-      { term: "peso", target: { areaId: "area-health", context: "health", intent: "register-weight", destination: "health" } },
-      { term: "cintura", target: { areaId: "area-health", context: "health", intent: "register-measure", destination: "health" } },
+      { term: "reuniao", target: { areaId: "area-work", context: "planning", intent: "schedule", destination: "agenda" } },
     ],
     learnedPatterns: [],
     history: [],
@@ -740,14 +717,6 @@ function inferCaptureIntent(text, target = {}) {
     return { intent: "schedule", reason: "Reconheceu pedido de agenda." };
   }
 
-  if (includesAnyKeyword(text, ["peso", "kg", "quilo", "quilos"])) {
-    return { intent: "register-weight", reason: "Reconheceu registro de peso." };
-  }
-
-  if (includesAnyKeyword(text, ["cintura", "quadril", "braco", "braço", "coxa", "peito", "medida", "medidas"])) {
-    return { intent: "register-measure", reason: "Reconheceu registro de medidas." };
-  }
-
   if (includesAnyKeyword(text, ["tipo do dia", "dia de", "mudar a quarta", "mudar a sexta", "dia externo", "dia com reuniao", "futebol"])) {
     return { intent: "change-day-type", reason: "Reconheceu mudanca de tipo de dia." };
   }
@@ -756,7 +725,7 @@ function inferCaptureIntent(text, target = {}) {
     return { intent: "create-habit", reason: "Reconheceu criacao de habito." };
   }
 
-  if (includesAnyKeyword(text, ["checklist", "item na rotina", "adicionar item", "coloca na rotina"])) {
+  if (includesAnyKeyword(text, ["checklist", "adicionar item", "quebrar em etapas", "subtarefa"])) {
     return { intent: "add-checklist-item", reason: "Reconheceu item de checklist." };
   }
 
@@ -806,13 +775,6 @@ function inferCaptureAreaProjectContext(text, state, voiceSettings, intent) {
       keywords: ["conteudo", "movimento", "comunicacao", "roteiro", "post", "video", "gravar", "publicar"],
     },
     {
-      areaId: "area-health",
-      projectId: "",
-      context: "health",
-      reason: "Reconheceu tema de saude.",
-      keywords: ["saude", "treino", "musculacao", "peso", "dieta", "agua", "suplemento", "alongamento"],
-    },
-    {
       areaId: "area-family",
       projectId: "",
       context: "home",
@@ -844,8 +806,8 @@ function inferCaptureAreaProjectContext(text, state, voiceSettings, intent) {
       areaId: "area-personal",
       projectId: "",
       context: "planning",
-      reason: "Reconheceu tema pessoal.",
-      keywords: ["pessoal", "organizar mente", "reflexao", "anotacao", "anotar"],
+      reason: "Reconheceu tema pessoal ou operacional.",
+      keywords: ["pessoal", "organizar mente", "reflexao", "anotacao", "anotar", "semana", "revisao", "checklist"],
     },
   ];
 
@@ -882,12 +844,8 @@ function inferVoiceDestination(intent, areaProjectInfo) {
     return { destination: areaProjectInfo.destination, reason: "Usou o destino da sua configuracao personalizada." };
   }
 
-  if (intent === "register-weight" || intent === "register-measure") {
-    return { destination: "health", reason: "Vai para Saude por ser um registro corporal." };
-  }
-
   if (intent === "create-habit" || intent === "add-checklist-item") {
-    return { destination: areaProjectInfo.areaId === "area-health" ? "health" : "routine", reason: "Vai para rotina/cuidados por ser um item recorrente." };
+    return { destination: "inbox", reason: "Entra na Inbox para seguir o fluxo central antes de virar execucao." };
   }
 
   if (intent === "change-day-type") {
@@ -919,8 +877,6 @@ function buildVoiceTitle(transcript, intent, checklist = []) {
     "create-habit": "Novo habito por voz",
     "add-checklist-item": "Novo item de checklist por voz",
     "change-day-type": "Ajuste de tipo de dia por voz",
-    "register-weight": "Registro de peso por voz",
-    "register-measure": "Registro de medida por voz",
     schedule: "Novo agendamento por voz",
     reschedule: "Reagendamento por voz",
     delegate: "Delegacao por voz",
@@ -1006,6 +962,62 @@ function pushHistory(state, type, summary, meta = {}) {
   state.history = state.history.slice(0, 250);
 }
 
+function migrateRemovedModules(state) {
+  const removedAreaMap = {
+    "area-health": "area-personal",
+    "area-routine": "area-personal",
+  };
+  const removedSections = new Set(["health", "routine"]);
+  const removedContexts = new Set(["health"]);
+  const removedTypes = new Set(["health"]);
+
+  state.areas = (state.areas || []).filter((area) => !removedAreaMap[area.id]);
+  state.objectives = (state.objectives || []).map((objective) => ({
+    ...objective,
+    areaId: removedAreaMap[objective.areaId] || objective.areaId,
+  }));
+  state.blocks = (state.blocks || []).map((block) => ({
+    ...block,
+    areaId: removedAreaMap[block.areaId] || block.areaId,
+  }));
+  state.tasks = (state.tasks || []).map((task) => ({
+    ...task,
+    areaId: removedAreaMap[task.areaId] || task.areaId,
+    context: removedContexts.has(task.context) ? "flex" : task.context,
+    type: removedTypes.has(task.type) ? "task" : task.type,
+  }));
+  state.sprints = (state.sprints || []).map((sprint) => ({
+    ...sprint,
+    priorityAreas: (sprint.priorityAreas || []).map((areaId) => removedAreaMap[areaId] || areaId).filter(Boolean),
+  }));
+
+  state.ui = state.ui || {};
+  if (removedSections.has(state.ui.activeSection)) {
+    state.ui.activeSection = "today";
+  }
+  if (removedSections.has(state.ui.checklistView)) {
+    state.ui.checklistView = "all";
+  }
+
+  if (state.settings?.voiceAssistant) {
+    state.settings.voiceAssistant = {
+      ...state.settings.voiceAssistant,
+      areaAliases: (state.settings.voiceAssistant.areaAliases || []).map((entry) => ({
+        ...entry,
+        value: removedAreaMap[entry.value] || entry.value,
+      })),
+      frequentAssociations: (state.settings.voiceAssistant.frequentAssociations || []).map((entry) => {
+        const target = { ...(entry.target || {}) };
+        target.areaId = removedAreaMap[target.areaId] || target.areaId || "";
+        if (target.context === "health") target.context = "flex";
+        if (target.destination === "health" || target.destination === "routine") target.destination = "inbox";
+        if (target.intent === "register-weight" || target.intent === "register-measure") target.intent = "create-task";
+        return { ...entry, target };
+      }),
+    };
+  }
+}
+
 function prepareState(state) {
   state.meta = state.meta || { appName: "Life OS Thz 2026", version: 5 };
   state.profile = state.profile || {};
@@ -1044,6 +1056,7 @@ function prepareState(state) {
     energyLevel: toNumber(state.weeklyPlan?.energyLevel, 3),
     mainFocus: state.weeklyPlan?.mainFocus || "",
   };
+  migrateRemovedModules(state);
 
   const layoutDefaults = normalizeLayouts(state.settings?.layoutDefaults || DEFAULT_LAYOUTS, DEFAULT_LAYOUTS);
   const layouts = normalizeLayouts(state.settings?.layouts || layoutDefaults, layoutDefaults);
@@ -1061,7 +1074,6 @@ function prepareState(state) {
       futureFreeformReady: toBoolean(state.settings?.layoutCapabilities?.futureFreeformReady, true),
     },
     prioritization: {
-      healthProtection: toNumber(state.settings?.prioritization?.healthProtection, 1.1),
       moveProtection: toNumber(state.settings?.prioritization?.moveProtection, 1.18),
       familyProtection: toNumber(state.settings?.prioritization?.familyProtection, 1.08),
       futureFocus: toNumber(state.settings?.prioritization?.futureFocus, 1.12),
@@ -1092,6 +1104,11 @@ function prepareState(state) {
       id: state.ui?.editor?.id || "",
     },
   };
+
+  state.areas = state.areas.map((area) => normalizeAreaPayload(area, area));
+  state.objectives = state.objectives.map((objective) => normalizeObjectivePayload(objective, objective));
+  state.blocks = state.blocks.map((block) => normalizeBlockPayload(block, block));
+  state.tasks = state.tasks.map((task) => normalizeTaskPayload(state, task, task));
 
   state.calendar = {
     provider: state.calendar?.provider || "google",
@@ -1679,11 +1696,6 @@ function scoreTask(task, state, referenceDate, dayProfile, gtd, flags, method) {
     reasons.push("tem prazo muito proximo");
   }
 
-  if (flags.protectHealth && task.areaId === "area-health") {
-    score += Math.round(8 * settings.healthProtection);
-    reasons.push("sua linha de raciocinio protege saude");
-  }
-
   if (flags.protectMove && task.areaId === "area-move") {
     score += Math.round(9 * settings.moveProtection);
     reasons.push("a mudanca tem prioridade estrutural");
@@ -1938,7 +1950,7 @@ function buildDaySnapshot(state, tasks, date) {
   const profile = resolveDayProfile(state, date);
   const dayTasks = tasks
     .filter((task) => task.scheduledDate === date)
-    .sort(sortByScore);
+    .sort(sortByChecklistOrder);
   const periodMap = Object.fromEntries(
     profile.periods.map((period) => [period.id, { ...period, load: 0, tasks: [] }]),
   );
@@ -2030,181 +2042,6 @@ function buildProjectSummaries(state, tasks) {
   });
 }
 
-function buildHabitWeekMatrix(habit, weekDates, selectedDate) {
-  return weekDates.map((date) => {
-    const existing = (habit.logs || []).find((entry) => entry.date === date);
-    return {
-      date,
-      shortLabel: formatShortDate(date),
-      done: Boolean(existing?.done),
-      selected: date === selectedDate,
-    };
-  });
-}
-
-function buildMonthWeekRows(selectedDate) {
-  const [year, month] = String(selectedDate || formatISODate(new Date())).split("-").map(Number);
-  const firstDay = new Date(year, month - 1, 1);
-  const lastDay = new Date(year, month, 0);
-  const start = new Date(firstDay);
-  const startOffset = (start.getDay() + 6) % 7;
-  start.setDate(start.getDate() - startOffset);
-  const end = new Date(lastDay);
-  const endOffset = 6 - ((end.getDay() + 6) % 7);
-  end.setDate(end.getDate() + endOffset);
-  const rows = [];
-
-  for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 7)) {
-    const weekStart = new Date(cursor);
-    const days = [];
-
-    for (let index = 0; index < 7; index += 1) {
-      const day = new Date(weekStart);
-      day.setDate(weekStart.getDate() + index);
-      const iso = formatISODate(day);
-      days.push({
-        date: iso,
-        weekdayLabel: formatWeekday(iso),
-        inMonth: day.getMonth() === month - 1,
-      });
-    }
-
-    if (days.some((day) => day.inMonth)) {
-      rows.push(days);
-    }
-  }
-
-  return rows;
-}
-
-function buildWeeklyTracker(title, kind, id, logs, selectedDate, targetPerWeek = 1, note = "", areaName = "") {
-  const monthWeeks = buildMonthWeekRows(selectedDate);
-  const selectedWeekDates = new Set(getWeekDates(selectedDate));
-  const normalizedLogs = normalizeDateLogEntries(logs || []);
-  const doneDates = new Set(normalizedLogs.filter((entry) => entry.done).map((entry) => entry.date));
-  const monthDates = new Set(monthWeeks.flat().filter((day) => day.inMonth).map((day) => day.date));
-  const monthDone = [...doneDates].filter((date) => monthDates.has(date)).length;
-  const monthExpected = targetPerWeek * monthWeeks.length;
-  const currentWeekDone = [...doneDates].filter((date) => selectedWeekDates.has(date)).length;
-
-  return {
-    id,
-    kind,
-    title,
-    note,
-    areaName,
-    targetPerWeek,
-    currentWeekDone,
-    monthDone,
-    monthExpected,
-    progressLabel: `${monthDone}/${monthExpected}`,
-    weeks: monthWeeks.map((week, index) => ({
-      id: `${id}-week-${index + 1}`,
-      label: `Semana ${index + 1}`,
-      done: week.filter((day) => doneDates.has(day.date)).length,
-      days: week.map((day) => ({
-        ...day,
-        done: doneDates.has(day.date),
-        selected: selectedWeekDates.has(day.date),
-      })),
-    })),
-  };
-}
-
-function buildRoutineChecklistItems(state, selectedDate) {
-  return [
-    ...(state.routines.morning || []).map((item) => ({
-      id: item.id,
-      kind: "routine",
-      title: item.title,
-      period: "Manha",
-      done: Boolean((item.logs || []).find((entry) => entry.date === selectedDate)?.done),
-      note: item.note || "",
-      areaName: "Rotina",
-      sectionLabel: "Rotina da manha",
-      scheduledDate: selectedDate,
-    })),
-    ...(state.routines.night || []).map((item) => ({
-      id: item.id,
-      kind: "routine",
-      title: item.title,
-      period: "Noite",
-      done: Boolean((item.logs || []).find((entry) => entry.date === selectedDate)?.done),
-      note: item.note || "",
-      areaName: "Rotina",
-      sectionLabel: "Rotina da noite",
-      scheduledDate: selectedDate,
-    })),
-  ];
-}
-
-function buildHabitChecklistItems(state, selectedDate) {
-  return state.habits.map((habit) => {
-    const log = (habit.logs || []).find((entry) => entry.date === selectedDate);
-    return {
-      id: habit.id,
-      kind: "habit",
-      title: habit.title,
-      period: "Habito",
-      done: Boolean(log?.done),
-      note: habit.note || "",
-      areaName: habit.areaId === "area-health" ? "Saude" : "Rotina",
-      sectionLabel: "Habitos",
-      scheduledDate: selectedDate,
-    };
-  });
-}
-
-function buildCareChecklistItems(state, selectedDate) {
-  return state.health.careItems.map((item) => {
-    const log = (item.logs || []).find((entry) => entry.date === selectedDate);
-    return {
-      id: item.id,
-      kind: "care",
-      title: item.title,
-      period: "Saude",
-      done: Boolean(log?.done),
-      note: item.note || "",
-      areaName: "Saude",
-      sectionLabel: "Checklist de cuidados",
-      scheduledDate: selectedDate,
-    };
-  });
-}
-
-function buildDietChecklistItems(state, selectedDate) {
-  return state.health.dietMeals.map((meal) => {
-    const log = (meal.logs || []).find((entry) => entry.date === selectedDate);
-    return {
-      id: meal.id,
-      kind: "diet",
-      title: meal.title,
-      period: "Dieta",
-      done: Boolean(log?.done),
-      note: meal.plan || meal.note || "",
-      areaName: "Saude",
-      sectionLabel: "Dieta do dia",
-      scheduledDate: selectedDate,
-      checklist: meal.checklist || [],
-    };
-  });
-}
-
-function buildChecklistSpecialEntries(state, selectedDate) {
-  const routines = buildRoutineChecklistItems(state, selectedDate);
-  const habits = buildHabitChecklistItems(state, selectedDate);
-  const care = buildCareChecklistItems(state, selectedDate);
-  const diet = buildDietChecklistItems(state, selectedDate);
-
-  return {
-    routines,
-    habits,
-    care,
-    diet,
-    daily: [...routines, ...habits, ...care, ...diet],
-  };
-}
-
 function makeChecklistGroup(id, label, entries, emptyMessage = "") {
   return {
     id,
@@ -2282,11 +2119,9 @@ function buildChecklistDateGroups(tasks, selectedDate) {
 
 function buildChecklistModel(state, openTasks, completedTasks, selectedDate, weekData) {
   const checklistView = state.ui.checklistView || "all";
-  const special = buildChecklistSpecialEntries(state, selectedDate);
   const workTasks = openTasks.filter((task) => task.area?.type === "work");
   const projectTasks = openTasks.filter((task) => task.projectId);
-  const healthTasks = openTasks.filter((task) => task.areaId === "area-health");
-  const routineTasks = openTasks.filter((task) => task.areaId === "area-routine");
+  const personalTasks = openTasks.filter((task) => task.area?.type !== "work");
   const overdueTasks = openTasks.filter((task) => task.isOverdue);
   const todayTasks = openTasks.filter((task) => task.scheduledDate === selectedDate).sort(sortByChecklistOrder);
   const nextWeekTasks = openTasks.filter((task) => {
@@ -2303,7 +2138,6 @@ function buildChecklistModel(state, openTasks, completedTasks, selectedDate, wee
     groups = [
       makeChecklistGroup("overdue", "Em atraso", overdueTasks.sort(sortByChecklistOrder), "Sem atrasos relevantes."),
       makeChecklistGroup("today", "Hoje", todayTasks, "Nada marcado para hoje."),
-      makeChecklistGroup("daily", "Checklist do dia", special.daily, "Sem checklist operacional hoje."),
     ].filter((group) => group.entries.length);
   } else if (checklistView === "next-7") {
     groups = buildChecklistDateGroups(openTasks, selectedDate);
@@ -2314,20 +2148,8 @@ function buildChecklistModel(state, openTasks, completedTasks, selectedDate, wee
       makeChecklistGroup("done-today", "Concluidas hoje", completedToday.sort(sortByChecklistOrder), "Nada concluido hoje."),
       makeChecklistGroup("done-earlier", "Concluidas antes", completedBefore.sort(sortByChecklistOrder), "Sem historico anterior por enquanto."),
     ].filter((group) => group.entries.length);
-  } else if (checklistView === "health") {
-    groups = [
-      makeChecklistGroup("health-tasks", "Tarefas de saude", healthTasks.sort(sortByChecklistOrder), "Sem tarefas abertas de saude."),
-      makeChecklistGroup("care", "Checklist de cuidados", special.care, "Sem cuidados cadastrados."),
-      makeChecklistGroup("diet", "Dieta do dia", special.diet, "Sem refeicoes cadastradas."),
-      makeChecklistGroup("habits", "Habitos de saude", special.habits.filter((item) => item.areaName === "Saude"), "Sem habitos de saude."),
-    ].filter((group) => group.entries.length);
-  } else if (checklistView === "routine") {
-    groups = [
-      makeChecklistGroup("routine-morning", "Rotina da manha", special.routines.filter((item) => item.period === "Manha"), "Sem itens de manha."),
-      makeChecklistGroup("routine-night", "Rotina da noite", special.routines.filter((item) => item.period === "Noite"), "Sem itens de noite."),
-      makeChecklistGroup("routine-habits", "Habitos", special.habits, "Sem habitos cadastrados."),
-      makeChecklistGroup("routine-tasks", "Tarefas da rotina", routineTasks.sort(sortByChecklistOrder), "Sem tarefas abertas da rotina."),
-    ].filter((group) => group.entries.length);
+  } else if (checklistView === "personal") {
+    groups = buildTaskTimeGroups(personalTasks, selectedDate);
   } else if (checklistView === "work") {
     groups = buildTaskTimeGroups(workTasks, selectedDate);
   } else if (checklistView === "projects") {
@@ -2339,13 +2161,11 @@ function buildChecklistModel(state, openTasks, completedTasks, selectedDate, wee
   }
 
   const quickDefaults = {
-    areaId: checklistView === "health"
-      ? "area-health"
-      : checklistView === "routine"
-        ? "area-routine"
-        : checklistView === "work" || checklistView === "projects"
-          ? "area-work"
-          : state.areas[0]?.id || "",
+    areaId: checklistView === "work" || checklistView === "projects"
+      ? "area-work"
+      : checklistView === "personal"
+        ? "area-personal"
+        : state.areas[0]?.id || "",
     projectId: checklistView === "projects" ? state.projects[0]?.id || "" : "",
   };
 
@@ -2353,12 +2173,11 @@ function buildChecklistModel(state, openTasks, completedTasks, selectedDate, wee
     activeView: checklistView,
     views: [
       { id: "all", label: "Todas", count: openTasks.length },
-      { id: "today", label: "Hoje", count: overdueTasks.length + todayTasks.length + special.daily.length },
+      { id: "today", label: "Hoje", count: overdueTasks.length + todayTasks.length },
+      { id: "personal", label: "Pessoal", count: personalTasks.length },
       { id: "next-7", label: "Proximos 7 dias", count: nextWeekTasks.length },
       { id: "no-date", label: "Sem data", count: undatedTasks.length },
       { id: "completed", label: "Concluidas", count: completedTasks.length },
-      { id: "health", label: "Saude", count: healthTasks.length + special.care.length + special.diet.length },
-      { id: "routine", label: "Rotina", count: special.routines.length + special.habits.length + routineTasks.length },
       { id: "work", label: "Trabalho", count: workTasks.length },
       { id: "projects", label: "Projetos", count: projectTasks.length },
     ],
@@ -2370,8 +2189,6 @@ function buildChecklistModel(state, openTasks, completedTasks, selectedDate, wee
 }
 
 function buildTodayChecklistModel(state, tasks, selectedDate, weekData) {
-  const special = buildChecklistSpecialEntries(state, selectedDate);
-
   const quickTasks = tasks
     .filter((task) => task.scheduledDate === selectedDate)
     .sort(sortByChecklistOrder)
@@ -2390,57 +2207,8 @@ function buildTodayChecklistModel(state, tasks, selectedDate, weekData) {
     }));
 
   return {
-    items: [...quickTasks, ...special.daily],
+    items: quickTasks,
     weekDates: weekData.dates,
-  };
-}
-
-function buildHealthModel(state, tasks, selectedDate, weekData) {
-  const weightLogs = [...state.health.weightLogs].sort((left, right) => right.date.localeCompare(left.date));
-  const measureLogs = [...state.health.measureLogs].sort((left, right) => right.date.localeCompare(left.date));
-  const workouts = [...state.health.workouts].sort((left, right) => right.date.localeCompare(left.date));
-  const latestWeight = weightLogs[0] || null;
-  const previousWeight = weightLogs[1] || null;
-  const careItems = state.health.careItems.map((item) => ({
-    ...item,
-    doneToday: Boolean((item.logs || []).find((entry) => entry.date === selectedDate)?.done),
-  }));
-  const dietMeals = state.health.dietMeals.map((meal) => ({
-    ...meal,
-    doneToday: Boolean((meal.logs || []).find((entry) => entry.date === selectedDate)?.done),
-  }));
-  const weekWorkouts = workouts.filter((entry) => weekData.dates.includes(entry.date));
-  const careDoneCount = careItems.filter((item) => item.doneToday).length;
-  const dietDoneCount = dietMeals.filter((item) => item.doneToday).length;
-  const latestMeasures = measureLogs[0] || null;
-  const workoutHabit = state.habits.find((habit) => habit.id === "habit-workout")
-    || state.habits.find((habit) => normalizeSearchText(habit.title).includes("trein"));
-  const careTrackers = state.health.careItems.map((item) => buildWeeklyTracker(item.title, "care", item.id, item.logs || [], selectedDate, 7, item.note || "", "Saude"));
-
-  return {
-    stats: {
-      weight: latestWeight ? latestWeight.weight : 0,
-      weightDelta: latestWeight && previousWeight ? Math.round((latestWeight.weight - previousWeight.weight) * 10) / 10 : 0,
-      workouts: weekWorkouts.length,
-      careDone: `${careDoneCount}/${Math.max(1, careItems.length)}`,
-      dietDone: `${dietDoneCount}/${Math.max(1, dietMeals.length)}`,
-    },
-    weightLogs: weightLogs.slice(0, 6),
-    measureLogs: measureLogs.slice(0, 6),
-    latestMeasures,
-    careItems,
-    careTrackers,
-    dietMeals,
-    workoutTracker: workoutHabit
-      ? buildWeeklyTracker(workoutHabit.title, "habit", workoutHabit.id, workoutHabit.logs || [], selectedDate, workoutHabit.targetPerWeek || 3, workoutHabit.note || "", "Saude")
-      : null,
-    workouts: workouts.slice(0, 6),
-    healthTasks: tasks.filter((task) => task.areaId === "area-health").slice(0, 6),
-    evolution: {
-      weights: weightLogs.slice(0, 6).reverse(),
-      measures: measureLogs.slice(0, 4).reverse(),
-    },
-    selectedDate,
   };
 }
 
@@ -2540,47 +2308,6 @@ function buildOrganizeModel(tasks) {
   }));
 }
 
-function buildRoutineModel(state, tasks, selectedDate, weekData) {
-  const habitProgress = state.habits.map((habit) => {
-    const done = (habit.logs || []).filter((log) => log.done && weekData.dates.includes(log.date)).length;
-    return {
-      ...habit,
-      done,
-      percent: clamp(Math.round(done * 100 / Math.max(1, habit.targetPerWeek)), 0, 100),
-      week: buildHabitWeekMatrix(habit, weekData.dates, selectedDate),
-      doneToday: Boolean((habit.logs || []).find((entry) => entry.date === selectedDate)?.done),
-    };
-  });
-  const routineTrackers = [...(state.routines.morning || []), ...(state.routines.night || [])]
-    .sort((left, right) => left.order - right.order)
-    .map((item) => buildWeeklyTracker(item.title, "routine", item.id, item.logs || [], selectedDate, 7, item.note || "", "Rotina"));
-  const careTrackers = state.health.careItems.map((item) => buildWeeklyTracker(item.title, "care", item.id, item.logs || [], selectedDate, 7, item.note || "", "Saude"));
-  const workoutHabit = state.habits.find((habit) => habit.id === "habit-workout")
-    || state.habits.find((habit) => normalizeSearchText(habit.title).includes("trein"));
-
-  return {
-    morning: [...(state.routines.morning || [])]
-      .sort((left, right) => left.order - right.order)
-      .map((item) => ({ ...item, doneToday: Boolean((item.logs || []).find((entry) => entry.date === selectedDate)?.done) })),
-    night: [...(state.routines.night || [])]
-      .sort((left, right) => left.order - right.order)
-      .map((item) => ({ ...item, doneToday: Boolean((item.logs || []).find((entry) => entry.date === selectedDate)?.done) })),
-    habits: habitProgress,
-    healthTasks: tasks.filter((task) => task.areaId === "area-health" && weekData.dates.includes(task.scheduledDate)).slice(0, 6),
-    careItems: state.health.careItems.map((item) => ({
-      ...item,
-      doneToday: Boolean((item.logs || []).find((entry) => entry.date === selectedDate)?.done),
-    })),
-    routineTrackers,
-    careTrackers,
-    workoutTracker: workoutHabit
-      ? buildWeeklyTracker(workoutHabit.title, "habit", workoutHabit.id, workoutHabit.logs || [], selectedDate, workoutHabit.targetPerWeek || 3, workoutHabit.note || "", "Saude")
-      : null,
-    weekDates: weekData.dates,
-    selectedDate,
-  };
-}
-
 function buildInboxModel(tasks) {
   const raw = tasks.filter((task) => task.location === "inbox");
   const recent = [...tasks]
@@ -2602,7 +2329,7 @@ function buildAgendaModel(state, tasks, weekData, selectedDate) {
   const blocks = state.blocks.filter((block) => weekData.dates.includes(block.date));
   const unscheduled = tasks
     .filter((task) => !task.scheduledDate && ["do-now", "priority", "schedule"].includes(task.finalBucket))
-    .sort(sortByScore)
+    .sort(sortByChecklistOrder)
     .slice(0, 8);
 
   return {
@@ -2610,7 +2337,7 @@ function buildAgendaModel(state, tasks, weekData, selectedDate) {
       ...day,
       tasks: tasks
         .filter((task) => task.scheduledDate === day.date)
-        .sort(sortByScore),
+        .sort(sortByChecklistOrder),
       blocks: blocks.filter((block) => block.date === day.date),
     })),
     unscheduled,
@@ -2805,7 +2532,6 @@ export function buildAppModel(inputState, referenceDate = new Date()) {
   const organize = buildOrganizeModel(filteredTasks);
   const inbox = buildInboxModel(filteredTasks);
   const settings = buildSettingsModel(state);
-  const health = buildHealthModel(state, filteredTasks, selectedDate, weekData);
   const todayChecklist = buildTodayChecklistModel(state, filteredTasks, selectedDate, weekData);
   const checklist = buildChecklistModel(state, filteredTasks, completedTasks, selectedDate, weekData);
   const agenda = buildAgendaModel(state, filteredTasks, weekData, selectedDate);
@@ -2829,8 +2555,6 @@ export function buildAppModel(inputState, referenceDate = new Date()) {
     inbox,
     areas: buildAreaSummaries(state, filteredTasks),
     projects: buildProjectSummaries(state, filteredTasks),
-    routine: buildRoutineModel(state, filteredTasks, selectedDate, weekData),
-    health,
     planning: buildPlanningModel(state, filteredTasks),
     agenda,
     todayChecklist,
@@ -3362,6 +3086,58 @@ export function reorderChecklistTask(state, taskId, targetTaskId) {
   return nextState;
 }
 
+function applyDayOrder(tasks) {
+  tasks.forEach((task, index) => {
+    task.checklistOrder = tasks.length - index;
+  });
+}
+
+export function reorderAgendaTask(state, taskId, targetTaskId = "", targetDate = "") {
+  const nextState = cloneState(state);
+  const movedTask = getTaskById(nextState, taskId);
+  if (!movedTask) return nextState;
+
+  const sourceDate = movedTask.scheduledDate || "";
+  const nextDate = targetDate || sourceDate;
+  if (!nextDate) {
+    return nextState;
+  }
+
+  const targetTask = targetTaskId ? getTaskById(nextState, targetTaskId) : null;
+  movedTask.scheduledDate = nextDate;
+  movedTask.location = "scheduled";
+  movedTask.finalBucket = nextDate === nextState.ui.selectedDate ? "do-now" : "schedule";
+  movedTask.status = ["delegated", "waiting", "discarded", "done"].includes(movedTask.status) ? movedTask.status : "todo";
+  movedTask.manualDecision = false;
+  movedTask.updatedAt = nowIso();
+
+  const rebalanceDate = (date, focusTaskId = "", taskToInsert = null) => {
+    if (!date) return;
+    const ordered = nextState.tasks
+      .filter((task) => isOpenTask(task) && !isTemplateTask(task) && task.scheduledDate === date && task.id !== taskToInsert?.id)
+      .sort(sortByChecklistOrder);
+    let insertIndex = ordered.length;
+    if (focusTaskId) {
+      const foundIndex = ordered.findIndex((task) => task.id === focusTaskId);
+      if (foundIndex !== -1) {
+        insertIndex = foundIndex;
+      }
+    }
+    if (taskToInsert) {
+      ordered.splice(insertIndex, 0, taskToInsert);
+    }
+    applyDayOrder(ordered);
+  };
+
+  if (sourceDate && sourceDate !== nextDate) {
+    rebalanceDate(sourceDate);
+  }
+  rebalanceDate(nextDate, targetTask?.id || "", movedTask);
+
+  pushHistory(nextState, "agenda-kanban", `Agenda reorganizada: ${movedTask.title}`);
+  return nextState;
+}
+
 export function updateTaskSchedule(state, taskId, updates = {}) {
   const nextState = cloneState(state);
   const task = getTaskById(nextState, taskId);
@@ -3536,13 +3312,11 @@ export function addInboxTask(state, payload) {
 export function addChecklistTask(state, payload) {
   const nextState = cloneState(state);
   const view = payload.checklistView || nextState.ui.checklistView || "all";
-  const defaultAreaId = view === "health"
-    ? "area-health"
-    : view === "routine"
-      ? "area-routine"
-      : view === "work" || view === "projects"
-        ? "area-work"
-        : nextState.areas[0]?.id || "";
+  const defaultAreaId = view === "work" || view === "projects"
+    ? "area-work"
+    : view === "personal"
+      ? "area-personal"
+      : nextState.areas[0]?.id || "";
   const shouldScheduleToday = !["no-date", "completed"].includes(view);
   const scheduledDate = payload.scheduledDate || (shouldScheduleToday ? (payload.selectedDate || nextState.ui.selectedDate) : "");
   const areaId = payload.areaId || defaultAreaId;
@@ -3696,6 +3470,16 @@ export function confirmVoiceCapture(state, payload = {}, meta = {}) {
     arm: toNumber(payload.arm, 0),
     thigh: toNumber(payload.thigh, 0),
   };
+  const removedIntentMap = {
+    "register-weight": "create-task",
+    "register-measure": "create-task",
+    "create-habit": "create-task",
+    "add-checklist-item": "create-task",
+  };
+  corrected.intent = removedIntentMap[corrected.intent] || corrected.intent;
+  corrected.destination = ["health", "routine"].includes(corrected.destination) ? "inbox" : corrected.destination;
+  corrected.areaId = ["area-health", "area-routine"].includes(corrected.areaId) ? "area-personal" : corrected.areaId;
+  corrected.context = corrected.context === "health" ? "flex" : corrected.context;
   const understood = meta.understood || {};
   const corrections = diffVoiceInterpretation(understood, corrected);
 
@@ -3711,61 +3495,6 @@ export function confirmVoiceCapture(state, payload = {}, meta = {}) {
   const notesWithTranscript = [corrected.notes, transcript ? `Captura por voz: ${transcript}` : ""]
     .filter(Boolean)
     .join("\n");
-
-  if (corrected.intent === "register-weight" || corrected.destination === "health" && corrected.healthWeight > 0) {
-    const saved = saveHealthWeight(nextState, {
-      date: corrected.scheduledDate || corrected.dueDate || nextState.ui.selectedDate,
-      weight: corrected.healthWeight,
-      note: notesWithTranscript,
-    });
-    return { nextState: saved, message: "Registro de peso salvo a partir da voz." };
-  }
-
-  if (corrected.intent === "register-measure") {
-    const saved = saveHealthMeasure(nextState, {
-      date: corrected.scheduledDate || corrected.dueDate || nextState.ui.selectedDate,
-      waist: corrected.waist,
-      chest: corrected.chest,
-      hip: corrected.hip,
-      arm: corrected.arm,
-      thigh: corrected.thigh,
-      note: notesWithTranscript,
-    });
-    return { nextState: saved, message: "Registro de medidas salvo a partir da voz." };
-  }
-
-  if (corrected.intent === "create-habit") {
-    const habit = normalizeHabitPayload({
-      title: corrected.title,
-      areaId: corrected.areaId || "area-health",
-      targetPerWeek: includesAnyKeyword(normalizeSearchText(transcript), ["todo dia", "todos os dias"]) ? 7 : 3,
-      note: notesWithTranscript,
-    }, null);
-    nextState.habits.unshift(habit);
-    pushHistory(nextState, "voice-habit", `Habito criado por voz: ${habit.title}`);
-    return { nextState, message: "Habito criado a partir da voz." };
-  }
-
-  if (corrected.intent === "add-checklist-item") {
-    if (corrected.destination === "health" || corrected.areaId === "area-health") {
-      const saved = saveHealthCareItem(nextState, {
-        title: corrected.title,
-        note: notesWithTranscript,
-      });
-      return { nextState: saved, message: "Item de cuidados salvo a partir da voz." };
-    }
-
-    const routine = normalizeRoutinePayload({
-      title: corrected.title,
-      period: corrected.scheduledPeriod || "morning",
-      areaId: corrected.areaId || "area-routine",
-      note: notesWithTranscript,
-      order: 99,
-    }, null);
-    setRoutineItem(nextState, routine);
-    pushHistory(nextState, "voice-routine", `Item de rotina criado por voz: ${routine.title}`);
-    return { nextState, message: "Item de rotina salvo a partir da voz." };
-  }
 
   if (corrected.intent === "change-day-type") {
     const targetDate = corrected.scheduledDate || corrected.dueDate || nextState.ui.selectedDate;
@@ -4231,7 +3960,6 @@ export function saveSettings(state, payload) {
   nextState.settings.accentTone = payload.accentTone || nextState.settings.accentTone;
   nextState.settings.reasoningLine = payload.reasoningLine || nextState.settings.reasoningLine;
   nextState.settings.prioritization = {
-    healthProtection: toNumber(payload.healthProtection, nextState.settings.prioritization.healthProtection),
     moveProtection: toNumber(payload.moveProtection, nextState.settings.prioritization.moveProtection),
     familyProtection: toNumber(payload.familyProtection, nextState.settings.prioritization.familyProtection),
     futureFocus: toNumber(payload.futureFocus, nextState.settings.prioritization.futureFocus),
