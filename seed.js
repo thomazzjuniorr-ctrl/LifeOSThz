@@ -197,9 +197,119 @@ export function buildSeedState(baseDate = new Date()) {
   ];
 
   const projects = [
-    { id: "project-assessoria", name: "Assessoria", areaId: "area-work", status: "active", color: "#5f7859", summary: "Clientes e follow-up com impacto financeiro." },
-    { id: "project-financeira", name: "Financeira", areaId: "area-work", status: "active", color: "#6e7f93", summary: "Analise, briefing e revisoes mais densas." },
-    { id: "project-conteudo", name: "Conteudo / Movimento / Comunicacao", areaId: "area-work", status: "active", color: "#8d6d7d", summary: "Posicionamento e tracao futura." },
+    {
+      id: "project-assessoria",
+      name: "Assessoria",
+      areaId: "area-work",
+      templateId: "client",
+      projectType: "Projeto de cliente",
+      status: "active",
+      dueDate: formatISODate(addDays(today, 21)),
+      priority: "high",
+      sprintId: "sprint-2-2026",
+      color: "#5f7859",
+      summary: "Clientes e follow-up com impacto financeiro.",
+      description: "Workspace para briefing, follow-up, contratos, decisoes e proxima entrega da Assessoria.",
+      objective: "Manter o projeto previsivel, com entregas claras e follow-up forte.",
+      infoLinks: [
+        { label: "Drive da Assessoria", url: "https://drive.google.com/" },
+        { label: "CRM / acompanhamento", url: "https://example.com/assessoria" },
+      ],
+      referenceEntries: [
+        { label: "Checklist de proposta", url: "" },
+        { label: "Historico de contratos", url: "" },
+      ],
+      observationLines: ["Clientes com impacto financeiro precisam de resposta rapida e objetiva."],
+      decisionLines: ["Toda proposta grande precisa sair com checklist de validacao final."],
+      freeNotes: "Priorizar clareza comercial e fechamento sem retrabalho.",
+      okrs: [
+        { id: "okr-assessoria-1", title: "Aumentar previsibilidade comercial", status: "active", progress: 56, keyResults: ["Fechar proposta principal", "Padronizar follow-up", "Reduzir travas no envio final"] },
+      ],
+      backlogItems: [
+        { id: "backlog-assessoria-1", title: "Mapear novos clientes potenciais", notes: "Ainda nao entra na semana atual." },
+        { id: "backlog-assessoria-2", title: "Revisar modelo padrao de proposta", notes: "Pode virar atividade base." },
+      ],
+      baseActivities: [
+        { id: "base-assessoria-1", title: "Fechar proposta importante", checklist: ["revisar escopo", "validar valores", "preparar envio"], context: "deep-work", estimatedMinutes: 75, priority: "high", bucket: "priority" },
+        { id: "base-assessoria-2", title: "Rodar follow-up de cliente", checklist: ["abrir historico", "definir mensagem", "registrar resposta"], context: "admin", estimatedMinutes: 25, priority: "medium", bucket: "priority" },
+      ],
+      actionPlan: [
+        { id: "plan-assessoria-1", title: "Fechar proposta da semana", nextAction: "Abrir a versao atual da proposta e ajustar os ultimos pontos.", checklist: ["revisar documento", "validar preco", "enviar"], bucket: "priority" },
+      ],
+    },
+    {
+      id: "project-financeira",
+      name: "Financeira",
+      areaId: "area-work",
+      templateId: "work",
+      projectType: "Projeto de trabalho",
+      status: "active",
+      dueDate: formatISODate(addDays(today, 30)),
+      priority: "high",
+      sprintId: "sprint-2-2026",
+      color: "#6e7f93",
+      summary: "Analise, briefing e revisoes mais densas.",
+      description: "Projeto para organizar briefing, revisoes e decisoes mais densas da Financeira.",
+      objective: "Diminuir atrasos e deixar o projeto mais previsivel.",
+      infoLinks: [
+        { label: "Pasta Financeira", url: "https://drive.google.com/" },
+      ],
+      referenceEntries: [
+        { label: "Briefing principal", url: "" },
+      ],
+      observationLines: ["Quando a Financeira atrasa, costuma travar toda a semana."],
+      decisionLines: ["Tarefas grandes precisam ser quebradas antes de entrar no dia."],
+      freeNotes: "Manter respostas objetivas e proxima acao clara.",
+      okrs: [
+        { id: "okr-financeira-1", title: "Reduzir gargalos de revisao", status: "active", progress: 44, keyResults: ["Fechar briefing atrasado", "Padronizar resposta", "Evitar retrabalho"] },
+      ],
+      backlogItems: [
+        { id: "backlog-financeira-1", title: "Revisar estrutura padrao de briefing", notes: "" },
+      ],
+      baseActivities: [
+        { id: "base-financeira-1", title: "Rodar revisao do briefing", checklist: ["ler pendencias", "responder principal trava", "registrar proximo passo"], context: "deep-work", estimatedMinutes: 60, priority: "high", bucket: "priority" },
+      ],
+      actionPlan: [
+        { id: "plan-financeira-1", title: "Limpar atraso principal", nextAction: "Abrir o briefing atrasado e fechar a resposta objetiva.", checklist: ["ler contexto", "responder", "agendar retorno"], bucket: "priority" },
+      ],
+    },
+    {
+      id: "project-conteudo",
+      name: "Conteudo / Movimento / Comunicacao",
+      areaId: "area-work",
+      templateId: "content",
+      projectType: "Projeto de conteudo",
+      status: "active",
+      dueDate: formatISODate(addDays(today, 40)),
+      priority: "medium",
+      sprintId: "sprint-3-2026",
+      color: "#8d6d7d",
+      summary: "Posicionamento e tracao futura.",
+      description: "Workspace para ideias, backlog de pautas, referencias, roteiros e execucao de conteudo.",
+      objective: "Criar consistencia e tracao de conteudo sem bagunca operacional.",
+      infoLinks: [
+        { label: "Pasta de referencias", url: "https://drive.google.com/" },
+      ],
+      referenceEntries: [
+        { label: "Banco de ideias", url: "" },
+      ],
+      observationLines: ["Conteudo cresce melhor quando parte de um backlog filtrado."],
+      decisionLines: ["Toda ideia boa precisa virar roteiro simples antes de entrar na semana."],
+      freeNotes: "Separar ideia, roteiro e execucao para reduzir travamento criativo.",
+      okrs: [
+        { id: "okr-conteudo-1", title: "Ganhar consistencia de producao", status: "active", progress: 38, keyResults: ["Fechar proximo roteiro", "Organizar backlog de pautas", "Publicar com menos atrito"] },
+      ],
+      backlogItems: [
+        { id: "backlog-conteudo-1", title: "Guardar 10 ideias de conteudo", notes: "" },
+        { id: "backlog-conteudo-2", title: "Montar biblioteca de referencias", notes: "" },
+      ],
+      baseActivities: [
+        { id: "base-conteudo-1", title: "Abrir pauta e montar roteiro", checklist: ["escolher tema", "definir estrutura", "fechar CTA"], context: "creative", estimatedMinutes: 45, priority: "medium", bucket: "priority" },
+      ],
+      actionPlan: [
+        { id: "plan-conteudo-1", title: "Gerar o proximo roteiro", nextAction: "Abrir o backlog e escolher uma pauta com mais aderencia ao sprint.", checklist: ["escolher pauta", "escrever estrutura"], bucket: "priority" },
+      ],
+    },
   ];
 
   const objectives = [
@@ -304,7 +414,14 @@ export function buildSeedState(baseDate = new Date()) {
   ];
 
   return {
-    meta: { appName: "Life OS Thz 2026", version: 5, seededAt: new Date().toISOString() },
+    meta: {
+      appName: "Life OS Thz 2026",
+      version: 6,
+      seededAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      revision: 1,
+      timezone: "America/Sao_Paulo",
+    },
     profile: {
       ownerName: "Thz",
       moveDeadline: "2026-11-01",
@@ -315,6 +432,7 @@ export function buildSeedState(baseDate = new Date()) {
     ui: {
       activeSection: "today",
       selectedDate: today,
+      selectedProjectId: "project-assessoria",
       priorityMethod: "pipeline",
       checklistView: "all",
       filters: { scope: "integrated", areaId: "all", projectId: "all", context: "all", dayTypeId: "all" },
@@ -409,6 +527,19 @@ export function buildSeedState(baseDate = new Date()) {
         ],
         learnedPatterns: [],
         history: [],
+      },
+      cloudSync: {
+        enabled: false,
+        provider: "supabase",
+        projectUrl: "",
+        anonKey: "",
+        tableName: "life_os_snapshots",
+        workspaceKey: "",
+        pollIntervalSeconds: 20,
+        lastSyncedAt: "",
+        lastPulledAt: "",
+        lastError: "",
+        deviceId: "",
       },
       googleCalendar: { clientId: "", apiKey: "", calendarId: "primary" },
       architecture: { workModuleMode: "embedded", futureApiReady: true },

@@ -1,3 +1,5 @@
+import { loadCloudState, saveCloudState } from "./cloud-sync.js";
+
 const DB_NAME = "life-os-thz-2026";
 const STORE_NAME = "app-state";
 const STATE_KEY = "state";
@@ -94,33 +96,47 @@ export async function loadAppState(seedFactory) {
   existing = existing || readFromLocalStorage();
 
   if (existing) {
-    return existing;
+    const syncedState = await loadCloudState(existing);
+    await writeToIndexedDB(syncedState).catch(() => false);
+    writeToLocalStorage(syncedState);
+    return syncedState;
   }
 
   const seededState = seedFactory();
-  await saveAppState(seededState);
-  return seededState;
+  const savedState = await saveAppState(seededState);
+  const syncedState = await loadCloudState(savedState);
+  await writeToIndexedDB(syncedState).catch(() => false);
+  writeToLocalStorage(syncedState);
+  return syncedState;
 }
 
 export async function saveAppState(state) {
+  const nextState = await saveCloudState(state);
   let savedToIndexedDB = false;
 
   try {
-    savedToIndexedDB = await writeToIndexedDB(state);
+    savedToIndexedDB = await writeToIndexedDB(nextState);
   } catch {
     savedToIndexedDB = false;
   }
 
   if (!savedToIndexedDB) {
-    writeToLocalStorage(state);
-    return;
+    writeToLocalStorage(nextState);
+    return nextState;
   }
 
-  writeToLocalStorage(state);
+  writeToLocalStorage(nextState);
+  return nextState;
+}
+
+export async function pullRemoteAppState(state) {
+  const nextState = await loadCloudState(state);
+  await writeToIndexedDB(nextState).catch(() => false);
+  writeToLocalStorage(nextState);
+  return nextState;
 }
 
 export async function resetAppState(seedFactory) {
   const seededState = seedFactory();
-  await saveAppState(seededState);
-  return seededState;
+  return saveAppState(seededState);
 }

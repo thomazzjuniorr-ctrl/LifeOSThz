@@ -1754,6 +1754,11 @@ button {
   gap: 0.9rem;
 }
 
+.minimal-capture-form .field input {
+  min-height: 3.2rem;
+  font-size: 1rem;
+}
+
 .organize-decision-grid,
 .compact-inline-grid {
   display: grid;
@@ -2011,6 +2016,14 @@ button {
   width: min(880px, 100%);
 }
 
+.simple-voice-modal {
+  width: min(580px, 100%);
+}
+
+.simple-voice-form textarea {
+  min-height: 11rem;
+}
+
 .voice-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -2065,6 +2078,107 @@ button {
   grid-template-columns: 260px minmax(0, 1fr);
   gap: 1.2rem;
   align-items: start;
+}
+
+.project-workspace-shell {
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr);
+  gap: 1.2rem;
+  align-items: start;
+}
+
+.project-list-column,
+.project-workspace-column,
+.project-workspace-form,
+.project-selector-list,
+.project-template-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+}
+
+.project-template-grid {
+  gap: 0.7rem;
+}
+
+.project-selector-card {
+  border: 1px solid rgba(67, 104, 81, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 22px;
+  padding: 1rem;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.project-selector-card.active {
+  border-color: rgba(67, 104, 81, 0.32);
+  box-shadow: 0 18px 40px rgba(67, 104, 81, 0.12);
+  transform: translateY(-1px);
+  background: linear-gradient(180deg, rgba(246, 250, 246, 0.98), rgba(255, 255, 255, 0.95));
+}
+
+.project-selector-card p {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.project-hero-card {
+  border: 1px solid rgba(67, 104, 81, 0.12);
+  border-radius: 28px;
+  padding: 1.35rem;
+  background: linear-gradient(135deg, rgba(112, 159, 116, 0.15), rgba(255, 255, 255, 0.96));
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.project-hero-card h3 {
+  margin: 0;
+  font-size: clamp(1.8rem, 2.7vw, 2.45rem);
+}
+
+.project-hero-card p {
+  margin: 0;
+  max-width: 70ch;
+  color: var(--ink-soft);
+}
+
+.project-section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.project-rich-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+
+.project-item-card {
+  border: 1px solid rgba(67, 104, 81, 0.1);
+  border-radius: 22px;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.94);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.project-item-card a {
+  color: var(--accent-strong);
+  word-break: break-word;
+}
+
+.project-okr-card {
+  background: linear-gradient(180deg, rgba(244, 249, 244, 0.96), rgba(255, 255, 255, 0.94));
+}
+
+.project-form-actions {
+  justify-content: flex-start;
 }
 
 .checklist-rail,
@@ -2311,6 +2425,11 @@ button {
 }
 
 @media (max-width: 1100px) {
+  .project-workspace-shell,
+  .project-section-grid {
+    grid-template-columns: 1fr;
+  }
+
   .checklist-workspace {
     grid-template-columns: 1fr;
   }
@@ -2323,6 +2442,12 @@ button {
 }
 
 @media (max-width: 900px) {
+  .project-workspace-shell,
+  .project-section-grid,
+  .project-rich-list {
+    grid-template-columns: 1fr;
+  }
+
   .checklist-workspace.mobile,
   .checklist-workspace {
     grid-template-columns: 1fr;

@@ -20,6 +20,15 @@ const defaultRuntimeConfig = {
     apiKey: "",
     calendarId: "primary",
   },
+  sync: {
+    enabled: false,
+    provider: "supabase",
+    projectUrl: "",
+    anonKey: "",
+    tableName: "life_os_snapshots",
+    workspaceKey: "",
+    pollIntervalSeconds: 20,
+  },
   pwa: {
     enabled: false,
     serviceWorkerPath: "/sw.js",
@@ -44,6 +53,7 @@ export function getRuntimeConfig() {
     access: mergeSection(defaultRuntimeConfig.access, globalConfig.access),
     auth: mergeSection(defaultRuntimeConfig.auth, globalConfig.auth),
     calendar: mergeSection(defaultRuntimeConfig.calendar, globalConfig.calendar),
+    sync: mergeSection(defaultRuntimeConfig.sync, globalConfig.sync),
     pwa: mergeSection(defaultRuntimeConfig.pwa, globalConfig.pwa),
   };
 }

@@ -1,6 +1,7 @@
 ﻿import { buildSeedState } from "./seed.js";
 import { GoogleCalendarService } from "./google-calendar.js";
-import { loadAppState, resetAppState, saveAppState } from "./storage.js";
+import { createWorkspaceKey, getCloudSyncConfig, hasCloudSyncConfigured } from "./cloud-sync.js";
+import { loadAppState, pullRemoteAppState, resetAppState, saveAppState } from "./storage.js";
 import { createVoiceRecognizer, getVoiceCaptureSupport } from "./voice-capture.js";
 import {
   addChecklistTask,
@@ -11,8 +12,10 @@ import {
   captureInboxTask,
   clearFilters,
   closeEditor,
+  createProjectFromTemplate,
   deleteEntity,
   duplicateEntity,
+  generateTaskFromProjectSource,
   moveLayoutCard,
   moveTaskToBucket,
   openEditor,
@@ -30,6 +33,7 @@ import {
   setActiveSprint,
   setCalendarConnected,
   setDayPeriodType,
+  setSelectedProject,
   setDayType,
   setFilter,
   setChecklistView,
@@ -41,9 +45,9 @@ import {
   updateBlockSchedule,
   updateTaskSchedule,
 } from "./engine.js";
-import { formatISODate, formatShortDate } from "./date.js";
+import { APP_TIMEZONE, formatShortDate, getCurrentISODate } from "./date.js";
 
-const APP_VERSION = 5;
+const APP_VERSION = 6;
 const MOBILE_BREAKPOINT = 900;
 
 const SECTION_GROUPS = [
@@ -81,7 +85,7 @@ const PAGE_META = {
   today: { kicker: "Execucao", title: "Hoje", text: "Poucas coisas, muita clareza e zero ruido desnecessario." },
   checklist: { kicker: "Operacao", title: "Checklist", text: "Execucao rapida, listas claras e andamento sincronizado com o resto do sistema." },
   days: { kicker: "Capacidade", title: "Dias", text: "Semana editavel por dia e por periodo." },
-  inbox: { kicker: "Captura", title: "Entrada", text: "Caixa de entrada rapida para tudo que surgir no dia." },
+  inbox: { kicker: "Captura", title: "Entrada", text: "Capture rapido, sem preencher campos. A organizacao vem depois." },
   prioritize: { kicker: "Decisao", title: "Priorizar", text: "GTD, Sapo e refino agil explicados visualmente." },
   organize: { kicker: "Saida", title: "Organizar", text: "Complexo por tras, simples na frente." },
   areas: { kicker: "Mapa", title: "Areas", text: "Uma vida so, separada por frentes e nao por sistemas diferentes." },
@@ -131,12 +135,6 @@ function truncateText(value = "", limit = 180) {
   const text = String(value).trim();
   if (text.length <= limit) return text;
   return `${text.slice(0, limit).trimEnd()}...`;
-}
-
-function cloneDraft(value) {
-  return typeof structuredClone === "function"
-    ? structuredClone(value)
-    : JSON.parse(JSON.stringify(value));
 }
 
 function badge(label, tone = "") {
@@ -722,50 +720,27 @@ function renderAgendaBlockEditor(blocks, model) {
 }
 
 function renderVoiceCaptureButton(copy = "Captura por voz", section = "inbox") {
+  const label = copy === "Microfone" ? "Microfone" : `Microfone • ${copy}`;
   return `
     <button class="ghost-button voice-entry-button" data-action="open-voice-capture" data-source-section="${section}">
-      Microfone • ${escapeHtml(copy)}
+      ${escapeHtml(label)}
     </button>
   `;
 }
 
-function renderVoiceCaptureModal(voiceState, model) {
+function renderVoiceCaptureModal(voiceState) {
   if (!voiceState?.open) {
     return "";
   }
 
-  const draft = voiceState.draft || {
-    action: "criar",
-    intent: "create-task",
-    destination: "inbox",
-    title: "",
-    areaId: model.options.areas[0]?.id || "",
-    projectId: "",
-    scheduledDate: "",
-    dueDate: "",
-    scheduledPeriod: "",
-    estimatedMinutes: 30,
-    priority: "medium",
-    urgency: 3,
-    context: "flex",
-    checklist: [],
-    notes: "",
-    suggestedDayTypeId: "",
-    reasons: [],
-  };
-  const intentLabel = model.options.voiceIntents.find((entry) => entry.id === draft.intent)?.label || draft.intent;
-  const destinationLabel = model.options.voiceDestinations.find((entry) => entry.id === draft.destination)?.label || draft.destination;
-  const dayTypeLabel = model.options.dayTypes.find((type) => type.id === draft.suggestedDayTypeId)?.label || draft.suggestedDayTypeId;
-  const showDayType = draft.intent === "change-day-type";
-
   return `
     <div class="modal-shell" data-action="close-voice-capture-backdrop">
-      <div class="modal-card voice-capture-modal" role="dialog" aria-modal="true">
+      <div class="modal-card voice-capture-modal simple-voice-modal" role="dialog" aria-modal="true">
         <div class="panel-head">
           <div>
             <span class="page-kicker">Entrada por voz</span>
-            <h3>Falar, interpretar e confirmar</h3>
-            <p>Voz entra no mesmo motor central do app: o sistema interpreta a intencao, sugere destino e voce confirma antes de salvar.</p>
+            <h3>Falar, revisar e salvar</h3>
+            <p>O microfone aqui serve so para capturar rapido. O texto fica editavel, voce confirma e a captura vai para a Inbox.</p>
           </div>
           <button class="ghost-button" type="button" data-action="close-voice-capture">Fechar</button>
         </div>
@@ -774,92 +749,27 @@ function renderVoiceCaptureModal(voiceState, model) {
           ${voiceState.supported
             ? `<button class="primary-button" type="button" data-action="${voiceState.listening ? "stop-voice-capture" : "start-voice-capture"}">${voiceState.listening ? "Parar gravacao" : "Iniciar microfone"}</button>`
             : `<span class="badge warning">Navegador sem voz nativa. Use a caixa de texto abaixo.</span>`}
-          <button class="secondary-button" type="button" data-action="analyze-voice-capture">Analisar texto</button>
           ${voiceState.listening ? `<span class="voice-live-pill">Ouvindo...</span>` : ""}
         </div>
 
-        <form class="form-grid" data-form="voice-capture-confirm">
+        <form class="form-grid simple-voice-form" data-form="voice-capture-confirm">
           <label class="field">
-            <span>Transcricao</span>
-            <textarea name="transcript">${escapeHtml(voiceState.transcript || "")}</textarea>
+            <span>Texto capturado</span>
+            <textarea name="transcript" placeholder="Fale ou digite uma atividade para salvar direto na Inbox.">${escapeHtml(voiceState.transcript || "")}</textarea>
           </label>
           ${voiceState.interim ? `<p class="muted-copy">Ao vivo: ${escapeHtml(voiceState.interim)}</p>` : ""}
           ${voiceState.error ? `<div class="callout warning"><strong>Atencao</strong><p>${escapeHtml(voiceState.error)}</p></div>` : ""}
 
-          <div class="voice-stage-grid">
-            <article class="reading-card">
-              <span class="page-kicker">Etapa 1</span>
-              <strong>Extracao</strong>
-              <div class="meta-row">${metaPills([
-                `Acao: ${draft.action || "-"}`,
-                `Area: ${(model.options.areas.find((area) => area.id === draft.areaId)?.name) || "-"}`,
-                `Projeto: ${(model.options.projects.find((project) => project.id === draft.projectId)?.name) || "Sem projeto"}`,
-                `Data: ${draft.scheduledDate || draft.dueDate || "-"}`,
-                `Periodo: ${(model.options.periods.find((period) => period.id === draft.scheduledPeriod)?.label) || "-"}`,
-                `Urgencia: ${draft.urgency || 3}/5`,
-                `Contexto: ${draft.context || "-"}`,
-              ])}</div>
-            </article>
-            <article class="reading-card">
-              <span class="page-kicker">Etapa 2</span>
-              <strong>Intencao</strong>
-              <div class="meta-row">${metaPills([intentLabel, destinationLabel])}</div>
-              <p class="muted-copy">O sistema tenta entender se voce quer criar tarefa, quebrar em checklist, mudar tipo de dia, agendar, delegar ou remarcar.</p>
-            </article>
-            <article class="reading-card">
-              <span class="page-kicker">Etapa 3</span>
-              <strong>Confirmacao assistida</strong>
-              <p class="muted-copy">Voce revisa o que foi entendido, corrige se precisar e so depois salva no destino sugerido.</p>
-            </article>
+          <div class="callout success">
+            <strong>Confirmacao simples.</strong>
+            <p>Assim que voce salvar, a captura entra na Inbox e voce continua na mesma aba para registrar o proximo item.</p>
           </div>
-
-          <div class="voice-analysis-grid">
-            <label class="field"><span>Intencao sugerida</span><select name="intent">${model.options.voiceIntents.map((item) => `<option value="${item.id}" ${draft.intent === item.id ? "selected" : ""}>${escapeHtml(item.label)}</option>`).join("")}</select></label>
-            <label class="field"><span>Destino sugerido</span><select name="destination">${model.options.voiceDestinations.map((item) => `<option value="${item.id}" ${draft.destination === item.id ? "selected" : ""}>${escapeHtml(item.label)}</option>`).join("")}</select></label>
-            <label class="field"><span>Acao</span><input name="action" value="${escapeHtml(draft.action || "")}" /></label>
-            <label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(draft.title || "")}" required /></label>
-            <label class="field"><span>Area sugerida</span><select name="areaId">${model.options.areas.map((area) => `<option value="${area.id}" ${draft.areaId === area.id ? "selected" : ""}>${escapeHtml(area.name)}</option>`).join("")}</select></label>
-            <label class="field"><span>Projeto sugerido</span><select name="projectId"><option value="">Sem projeto</option>${model.options.projects.map((project) => `<option value="${project.id}" ${draft.projectId === project.id ? "selected" : ""}>${escapeHtml(project.name)}</option>`).join("")}</select></label>
-            <label class="field"><span>Data sugerida</span><input type="date" name="scheduledDate" value="${escapeHtml(draft.scheduledDate || "")}" /></label>
-            <label class="field"><span>Prazo sugerido</span><input type="date" name="dueDate" value="${escapeHtml(draft.dueDate || "")}" /></label>
-            <label class="field"><span>Periodo</span><select name="scheduledPeriod"><option value="">Sem periodo</option>${model.options.periods.map((period) => `<option value="${period.id}" ${draft.scheduledPeriod === period.id ? "selected" : ""}>${escapeHtml(period.label)}</option>`).join("")}</select></label>
-            <label class="field"><span>Duracao</span><input type="number" min="5" name="estimatedMinutes" value="${escapeHtml(draft.estimatedMinutes || 30)}" /></label>
-            <label class="field"><span>Prioridade</span><select name="priority"><option value="low" ${draft.priority === "low" ? "selected" : ""}>Baixa</option><option value="medium" ${draft.priority === "medium" ? "selected" : ""}>Media</option><option value="high" ${draft.priority === "high" ? "selected" : ""}>Alta</option></select></label>
-            <label class="field"><span>Urgencia</span><input type="number" min="1" max="5" name="urgency" value="${escapeHtml(draft.urgency || 3)}" /></label>
-            <label class="field"><span>Contexto</span><select name="context">${model.options.contexts.map((context) => `<option value="${context}" ${draft.context === context ? "selected" : ""}>${escapeHtml(context)}</option>`).join("")}</select></label>
-          </div>
-
-          ${showDayType ? `
-            <div class="field-grid two">
-              <label class="field"><span>Tipo de dia</span><select name="suggestedDayTypeId"><option value="">Sem sugestao</option>${model.options.dayTypes.map((type) => `<option value="${type.id}" ${draft.suggestedDayTypeId === type.id ? "selected" : ""}>${escapeHtml(type.label)}</option>`).join("")}</select></label>
-              <label class="field"><span>Dia alvo</span><input type="date" name="scheduledDate" value="${escapeHtml(draft.scheduledDate || draft.dueDate || "")}" /></label>
-            </div>
-          ` : ""}
-
-          <label class="field">
-            <span>Checklist / proximas acoes</span>
-            <textarea name="checklist">${escapeHtml((draft.checklist || []).join("\n"))}</textarea>
-          </label>
-          <label class="field">
-            <span>Observacao</span>
-            <textarea name="notes">${escapeHtml(draft.notes || "")}</textarea>
-          </label>
-
-          ${draft.suggestedDayTypeId && !showDayType
-            ? `<div class="meta-row">${metaPills([`Tipo de dia sugerido: ${dayTypeLabel}`])}</div>`
-            : ""}
-          ${draft.reasons?.length ? `<div class="meta-row">${metaPills(draft.reasons)}</div>` : ""}
 
           <div class="toolbar-row">
-            <button class="primary-button" type="submit">Confirmar e salvar</button>
-            <button class="ghost-button" type="button" data-action="analyze-voice-capture">Atualizar sugestoes</button>
+            <button class="primary-button" type="submit">Salvar na Inbox</button>
+            <button class="ghost-button" type="button" data-action="close-voice-capture">Cancelar</button>
           </div>
         </form>
-
-        <div class="reading-card">
-          <strong>Base pronta para evolucao</strong>
-          <p>Quando o WhatsApp entrar, ele pode usar esse mesmo rascunho interpretado, com intencao, destino e historico das suas correcoes.</p>
-        </div>
       </div>
     </div>
   `;
@@ -1220,28 +1130,28 @@ function renderDaysPage(model) {
 function renderInboxPage(model) {
   return `
     <section class="page-grid two">
-      ${panel("Captura simples", `
+      ${panel("Captura rapida", `
         <div class="simple-capture-shell">
           <div class="callout success">
-            <strong>Entrada = captura, nao preenchimento.</strong>
-            <p>Voce joga a tarefa aqui. O sistema interpreta area, projeto, urgencia, possivel proxima acao e empurra para Priorizar e Organizar.</p>
+            <strong>So capture.</strong>
+            <p>Sem area, sem projeto, sem prazo. Registre rapido aqui e organize depois.</p>
           </div>
-          <form class="simple-capture-form" data-form="capture-task">
+          <form class="simple-capture-form minimal-capture-form" data-form="capture-task">
             <label class="field">
-              <span>Solte a tarefa aqui</span>
-              <input name="title" placeholder="Ex: revisar proposta da assessoria amanha e enviar para o cliente" required />
+              <span>Nova captura</span>
+              <input name="title" placeholder="Ex: ligar para o cliente, revisar proposta, separar documentos..." required />
             </label>
             <div class="toolbar-row">
               ${renderVoiceCaptureButton("Microfone", "inbox")}
-              <button class="primary-button" type="submit">Enviar para organizar</button>
+              <button class="primary-button" type="submit">Enviar</button>
             </div>
           </form>
         </div>
       `, { wide: true })}
-      ${panel("Ultimas capturas", `
+      ${panel("Capturas recentes", `
         <div class="meta-row">${metaPills([
-          `${model.inbox.counts.captured} em organizacao`,
-          `${model.inbox.counts.raw} ainda na inbox bruta`,
+          `${model.inbox.counts.raw} na inbox`,
+          `${model.inbox.counts.recent} recentes`,
         ])}</div>
         ${taskList(model.inbox.recent, { empty: "Sem capturas recentes. Use o campo acima ou o microfone." })}
       `)}
@@ -1365,8 +1275,187 @@ function renderAreasPage(model) {
   return `<section class="page-grid two">${model.areas.map((area) => panel(area.name, `<p class="muted-copy">${escapeHtml(area.description)}</p><div class="meta-row">${metaPills([`${area.openCount} abertas`, `${area.priorityCount} em destaque`, `${area.alerts} alertas`])}</div>${taskList(area.nextTasks, { empty: "Sem tarefas abertas nesta area." })}<div class="toolbar-row"><button class="ghost-button" data-action="open-editor" data-kind="area" data-id="${area.id}">Editar area</button></div>`)).join("")}</section>`;
 }
 
+function renderProjectLinkList(entries = [], emptyMessage) {
+  if (!entries.length) {
+    return emptyState(emptyMessage);
+  }
+
+  return `<div class="project-rich-list">${entries.map((entry) => `
+    <article class="project-item-card">
+      <strong>${escapeHtml(entry.label || entry.url || "Link")}</strong>
+      ${entry.url ? `<a href="${escapeHtml(entry.url)}" target="_blank" rel="noreferrer">${escapeHtml(entry.url)}</a>` : `<p class="muted-copy">Sem URL cadastrada.</p>`}
+    </article>
+  `).join("")}</div>`;
+}
+
+function renderProjectPlainList(entries = [], emptyMessage, options = {}) {
+  if (!entries.length) {
+    return emptyState(emptyMessage);
+  }
+
+  return `<div class="project-rich-list">${entries.map((entry) => `
+    <article class="project-item-card">
+      <strong>${escapeHtml(entry.title || entry)}</strong>
+      ${entry.notes ? `<p class="muted-copy">${escapeHtml(entry.notes)}</p>` : ""}
+      ${entry.nextAction ? `<p class="muted-copy">Proxima acao: ${escapeHtml(entry.nextAction)}</p>` : ""}
+      ${entry.checklist?.length ? `<p class="muted-copy">Checklist: ${escapeHtml(entry.checklist.join(" • "))}</p>` : ""}
+      ${entry.keyResults?.length ? `<p class="muted-copy">KRs: ${escapeHtml(entry.keyResults.join(" • "))}</p>` : ""}
+      ${options.taskButton ? `<div class="toolbar-row"><button class="ghost-button" type="button" data-action="generate-project-task" data-project-id="${options.projectId}" data-project-source="${options.sourceType}" data-project-entry="${entry.id}">${escapeHtml(options.taskButton)}</button></div>` : ""}
+    </article>
+  `).join("")}</div>`;
+}
+
+function renderProjectOkrs(entries = [], projectId) {
+  if (!entries.length) {
+    return emptyState("Sem OKRs cadastrados para este projeto.");
+  }
+
+  return `<div class="project-rich-list project-okr-list">${entries.map((okr) => `
+    <article class="project-item-card project-okr-card">
+      <div class="task-card-top">
+        <strong>${escapeHtml(okr.title)}</strong>
+        ${badge(`${okr.progress}%`, okr.progress >= 70 ? "success" : okr.progress >= 40 ? "" : "warning")}
+      </div>
+      <div class="meta-row">${metaPills([okr.status || "active", `${(okr.keyResults || []).length} KR(s)`])}</div>
+      ${(okr.keyResults || []).length ? `<p class="muted-copy">${escapeHtml(okr.keyResults.join(" • "))}</p>` : ""}
+      <div class="toolbar-row"><button class="ghost-button" type="button" data-action="generate-project-task" data-project-id="${projectId}" data-project-source="okr" data-project-entry="${okr.id}">Gerar acao</button></div>
+    </article>
+  `).join("")}</div>`;
+}
+
 function renderProjectsPage(model) {
-  return `<section class="page-grid two">${model.projects.map((project) => panel(project.name, `<p class="muted-copy">${escapeHtml(project.summary)}</p><div class="meta-row">${metaPills([`${project.openCount} abertas`, `${project.progress}% previsivel`])}</div>${taskList(project.nextTasks, { empty: "Sem tarefas abertas neste projeto." })}<div class="toolbar-row"><button class="ghost-button" data-action="open-editor" data-kind="project" data-id="${project.id}">Editar projeto</button></div>`)).join("")}</section>`;
+  const projectView = model.projectsView;
+  const selected = projectView.selected;
+
+  if (!selected) {
+    return `
+      <section class="project-workspace-shell">
+        <aside class="project-list-column">
+          ${panel("Templates", `<div class="project-template-grid">${projectView.templates.map((template) => `<button class="ghost-button" type="button" data-action="create-project-template" data-project-template="${template.id}">${escapeHtml(template.label)}</button>`).join("")}</div>`)}
+        </aside>
+        <section class="project-workspace-column">
+          ${panel("Projetos", `<div class="callout"><strong>Sem projeto selecionado.</strong><p>Crie um projeto a partir de um template para abrir a pagina individual dele.</p></div>`)}
+        </section>
+      </section>
+    `;
+  }
+
+  const areaOptions = model.options.areas.map((area) => `<option value="${area.id}" ${selected.areaId === area.id ? "selected" : ""}>${escapeHtml(area.name)}</option>`).join("");
+  const sprintOptions = `<option value="">Sem sprint</option>${model.options.sprints.map((sprint) => `<option value="${sprint.id}" ${selected.sprintId === sprint.id ? "selected" : ""}>${escapeHtml(sprint.title)}</option>`).join("")}`;
+  const templateOptions = model.options.projectTemplates.map((template) => `<option value="${template.id}" ${selected.templateId === template.id ? "selected" : ""}>${escapeHtml(template.label)}</option>`).join("");
+
+  return `
+    <section class="project-workspace-shell">
+      <aside class="project-list-column">
+        ${panel("Templates de projeto", `
+          <div class="project-template-grid">
+            ${projectView.templates.map((template) => `<button class="ghost-button" type="button" data-action="create-project-template" data-project-template="${template.id}">${escapeHtml(template.label)}</button>`).join("")}
+          </div>
+          <p class="muted-copy">Cada template abre um workspace base ja com blocos sugeridos.</p>
+        `)}
+        ${panel("Projetos ativos", `
+          <div class="project-selector-list">
+            ${projectView.summaries.map((project) => `
+              <button class="project-selector-card ${project.active ? "active" : ""}" type="button" data-action="select-project" data-project-id="${project.id}">
+                <span class="page-kicker">${escapeHtml(project.projectType || "Projeto")}</span>
+                <strong>${escapeHtml(project.name)}</strong>
+                <p>${escapeHtml(project.summary || "Sem resumo ainda.")}</p>
+                <div class="meta-row">${metaPills([`${project.openCount} abertas`, `${project.progress}%`, project.sprintTitle || "Sem sprint"])}</div>
+              </button>
+            `).join("")}
+          </div>
+        `)}
+      </aside>
+
+      <section class="project-workspace-column">
+        <form class="project-workspace-form" data-form="project-workspace">
+          <input type="hidden" name="id" value="${escapeHtml(selected.id)}" />
+          <div class="project-hero-card">
+            <div>
+              <span class="page-kicker">${escapeHtml(selected.projectType || "Projeto")}</span>
+              <h3>${escapeHtml(selected.name)}</h3>
+              <p>${escapeHtml(selected.summary || "Sem resumo ainda.")}</p>
+            </div>
+            <div class="meta-row">${metaPills([
+              `${selected.openTasks.length} abertas`,
+              `${selected.generatedTasks.length} no fluxo`,
+              selected.sprintTitle || "Sem sprint",
+              selected.priority ? `Prioridade ${selected.priority}` : "",
+            ])}</div>
+          </div>
+
+          <div class="project-section-grid">
+            ${panel("Visao geral", `
+              <div class="field-grid two">
+                <label class="field"><span>Nome do projeto</span><input name="name" value="${escapeHtml(selected.name || "")}" /></label>
+                <label class="field"><span>Template / tipo</span><select name="templateId">${templateOptions}</select></label>
+              </div>
+              <div class="field-grid four">
+                <label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label>
+                <label class="field"><span>Status</span><input name="status" value="${escapeHtml(selected.status || "active")}" /></label>
+                <label class="field"><span>Prazo</span><input type="date" name="dueDate" value="${escapeHtml(selected.dueDate || "")}" /></label>
+                <label class="field"><span>Prioridade</span><select name="priority"><option value="low" ${selected.priority === "low" ? "selected" : ""}>Baixa</option><option value="medium" ${selected.priority === "medium" ? "selected" : ""}>Media</option><option value="high" ${selected.priority === "high" ? "selected" : ""}>Alta</option></select></label>
+              </div>
+              <div class="field-grid two">
+                <label class="field"><span>Sprint relacionado</span><select name="sprintId">${sprintOptions}</select></label>
+                <label class="field"><span>Tipo exibido</span><input name="projectType" value="${escapeHtml(selected.projectType || "")}" /></label>
+              </div>
+              <label class="field"><span>Descricao</span><textarea name="description">${escapeHtml(selected.description || "")}</textarea></label>
+              <label class="field"><span>Objetivo principal</span><textarea name="objective">${escapeHtml(selected.objective || "")}</textarea></label>
+              <label class="field"><span>Resumo curto</span><textarea name="summary">${escapeHtml(selected.summary || "")}</textarea></label>
+            `, { wide: true })}
+
+            ${panel("Central de informacoes", `
+              ${renderProjectLinkList(selected.infoLinks, "Sem links principais ainda.")}
+              ${renderProjectLinkList(selected.referenceEntries, "Sem referencias ainda.")}
+              <div class="field-grid two">
+                <label class="field"><span>Links (um por linha: titulo | url)</span><textarea name="infoLinks" placeholder="Drive | https://...&#10;Notion | https://...">${escapeHtml((selected.infoLinks || []).map((entry) => [entry.label || "", entry.url || ""].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
+                <label class="field"><span>Arquivos / referencias (titulo | url)</span><textarea name="referenceEntries" placeholder="Briefing | https://...">${escapeHtml((selected.referenceEntries || []).map((entry) => [entry.label || "", entry.url || ""].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
+              </div>
+              <div class="field-grid two">
+                <label class="field"><span>Decisoes importantes</span><textarea name="decisionLines" placeholder="Uma decisao por linha">${escapeHtml((selected.decisionLines || []).join("\n"))}</textarea></label>
+                <label class="field"><span>Observacoes</span><textarea name="observationLines" placeholder="Uma observacao por linha">${escapeHtml((selected.observationLines || []).join("\n"))}</textarea></label>
+              </div>
+              <label class="field"><span>Notas livres</span><textarea name="freeNotes">${escapeHtml(selected.freeNotes || "")}</textarea></label>
+            `, { wide: true })}
+
+            ${panel("OKRs do projeto", `
+              ${renderProjectOkrs(selected.okrs || [], selected.id)}
+              <label class="field"><span>Editar OKRs (objetivo | status | progresso | KR1 ; KR2 ; KR3)</span><textarea name="okrs">${escapeHtml((selected.okrs || []).map((entry) => [entry.title || "", entry.status || "active", entry.progress || 0, (entry.keyResults || []).join("; ")].join(" | ")).join("\n"))}</textarea></label>
+            `, { wide: true })}
+
+            ${panel("Backlog do projeto", `
+              ${renderProjectPlainList(selected.backlogItems || [], "Sem backlog ainda.", { projectId: selected.id, sourceType: "backlog", taskButton: "Gerar tarefa" })}
+              <label class="field"><span>Backlog (titulo | observacao)</span><textarea name="backlogItems">${escapeHtml((selected.backlogItems || []).map((entry) => [entry.title || "", entry.notes || ""].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
+            `)}
+
+            ${panel("Atividades base", `
+              ${renderProjectPlainList(selected.baseActivities || [], "Sem atividades base ainda.", { projectId: selected.id, sourceType: "base", taskButton: "Virar tarefa" })}
+              <label class="field"><span>Atividades base (titulo | item 1 ; item 2 ; item 3)</span><textarea name="baseActivities">${escapeHtml((selected.baseActivities || []).map((entry) => [entry.title || "", (entry.checklist || []).join("; ")].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
+            `)}
+
+            ${panel("Plano de acao", `
+              ${renderProjectPlainList(selected.actionPlan || [], "Sem plano de acao ainda.", { projectId: selected.id, sourceType: "action", taskButton: "Gerar tarefa" })}
+              <label class="field"><span>Plano de acao (titulo | proxima acao | item 1 ; item 2)</span><textarea name="actionPlan">${escapeHtml((selected.actionPlan || []).map((entry) => [entry.title || "", entry.nextAction || "", (entry.checklist || []).join("; ")].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
+            `)}
+
+            ${panel("Tarefas geradas no sistema", `
+              <div class="callout">
+                <strong>Fluxo do projeto</strong>
+                <p>Projeto -> gerar tarefas -> Organizar -> Agenda -> Hoje. Nada vem direto para Hoje.</p>
+              </div>
+              ${taskList(selected.generatedTasks, { empty: "Nenhuma tarefa gerada ainda para este projeto." })}
+            `, { wide: true })}
+          </div>
+
+          <div class="toolbar-row project-form-actions">
+            <button class="primary-button" type="submit">Salvar projeto</button>
+            <button class="ghost-button" type="button" data-action="open-editor" data-kind="project" data-id="${selected.id}">Editor avancado</button>
+          </div>
+        </form>
+      </section>
+    </section>
+  `;
 }
 
 function renderPlanningPage(model) {
@@ -1480,6 +1569,10 @@ function renderSettingsPage(model) {
             <label class="field"><span>Futuro</span><input type="number" step="0.01" name="futureFocus" value="${escapeHtml(model.settings.prioritization.futureFocus)}" /></label>
             <label class="field"><span>Delegacao</span><input type="number" step="0.01" name="delegationBias" value="${escapeHtml(model.settings.prioritization.delegationBias)}" /></label>
           </div>
+          <div class="callout success">
+            <strong>Calendario interno alinhado ao Brasil.</strong>
+            <p>Timezone padrao do app: ${escapeHtml(APP_TIMEZONE)}. O Google Calendar continua opcional e pode entrar depois sem quebrar o calendario interno.</p>
+          </div>
           <label class="field"><span>Linha de raciocinio</span><textarea name="reasoningLine">${escapeHtml(model.settings.reasoningLine)}</textarea></label>
           <div class="callout">
             <strong>Vocabulario de voz</strong>
@@ -1499,6 +1592,43 @@ function renderSettingsPage(model) {
             <span>Associacoes frequentes</span>
             <textarea name="voiceAssociations" placeholder="gravar => projeto:project-conteudo, contexto:creative, intencao:create-task, destino:project&#10;reuniao => area:area-work, contexto:planning, intencao:schedule, destino:agenda">${escapeHtml(model.settings.voiceAssistant.frequentAssociationsText || "")}</textarea>
           </label>
+          <div class="callout">
+            <strong>Sincronizacao entre celular e desktop</strong>
+            <p>Modo recomendado: Supabase com snapshot unico do seu workspace. A captura continua local-first, mas com sincronizacao automatica entre dispositivos.</p>
+          </div>
+          <div class="field-grid two">
+            <label class="field">
+              <span>Ativar sincronizacao</span>
+              <select name="syncEnabled">
+                <option value="false" ${!model.settings.cloudSync.enabled ? "selected" : ""}>Desligada</option>
+                <option value="true" ${model.settings.cloudSync.enabled ? "selected" : ""}>Ligada</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Provider</span>
+              <select name="syncProvider">
+                <option value="supabase" ${model.settings.cloudSync.provider === "supabase" ? "selected" : ""}>Supabase</option>
+              </select>
+            </label>
+          </div>
+          <div class="field-grid two">
+            <label class="field"><span>Project URL</span><input name="syncProjectUrl" value="${escapeHtml(model.settings.cloudSync.projectUrl || "")}" placeholder="https://SEU-PROJETO.supabase.co" /></label>
+            <label class="field"><span>Anon / Publishable Key</span><input name="syncAnonKey" value="${escapeHtml(model.settings.cloudSync.anonKey || "")}" placeholder="sb_publishable_... ou anon key" /></label>
+          </div>
+          <div class="field-grid three">
+            <label class="field"><span>Tabela</span><input name="syncTableName" value="${escapeHtml(model.settings.cloudSync.tableName || "life_os_snapshots")}" /></label>
+            <label class="field"><span>Workspace Key</span><input name="syncWorkspaceKey" value="${escapeHtml(model.settings.cloudSync.workspaceKey || "")}" placeholder="chave privada do workspace" /></label>
+            <label class="field"><span>Intervalo (s)</span><input type="number" min="10" name="syncPollIntervalSeconds" value="${escapeHtml(model.settings.cloudSync.pollIntervalSeconds || 20)}" /></label>
+          </div>
+          <div class="toolbar-row">
+            <button class="ghost-button" type="button" data-action="generate-sync-key">Gerar workspace key</button>
+            <button class="ghost-button" type="button" data-action="sync-cloud-now">Sincronizar agora</button>
+          </div>
+          <div class="meta-row">${metaPills([
+            model.settings.cloudSync.lastSyncedAt ? `Ultimo envio: ${formatShortDate(model.settings.cloudSync.lastSyncedAt.slice(0, 10))}` : "Sem envio ainda",
+            model.settings.cloudSync.lastPulledAt ? `Ultima leitura: ${formatShortDate(model.settings.cloudSync.lastPulledAt.slice(0, 10))}` : "Sem leitura ainda",
+            model.settings.cloudSync.lastError ? `Erro: ${model.settings.cloudSync.lastError}` : "Sincronizacao sem erro registrado",
+          ])}</div>
           <button class="primary-button" type="submit">Salvar configuracoes</button>
         </form>
       `)}
@@ -1554,7 +1684,7 @@ function renderEditorModal(editorView, options) {
   const fieldMap = {
     task: taskFields,
     area: `<label class="field"><span>Nome</span><input name="name" value="${escapeHtml(entity.name || "")}" /></label><div class="field-grid two"><label class="field"><span>Tipo</span><input name="type" value="${escapeHtml(entity.type || "life")}" /></label><label class="field"><span>Cor</span><input name="color" value="${escapeHtml(entity.color || "")}" /></label></div><label class="field"><span>Descricao</span><textarea name="description">${escapeHtml(entity.description || "")}</textarea></label>`,
-    project: `<label class="field"><span>Nome</span><input name="name" value="${escapeHtml(entity.name || "")}" /></label><div class="field-grid two"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Status</span><input name="status" value="${escapeHtml(entity.status || "active")}" /></label></div><label class="field"><span>Resumo</span><textarea name="summary">${escapeHtml(entity.summary || "")}</textarea></label>`,
+    project: `<label class="field"><span>Nome</span><input name="name" value="${escapeHtml(entity.name || "")}" /></label><div class="field-grid three"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Status</span><input name="status" value="${escapeHtml(entity.status || "active")}" /></label><label class="field"><span>Template</span><select name="templateId">${options.projectTemplates.map((template) => `<option value="${template.id}" ${entity.templateId === template.id ? "selected" : ""}>${escapeHtml(template.label)}</option>`).join("")}</select></label></div><div class="field-grid three"><label class="field"><span>Tipo</span><input name="projectType" value="${escapeHtml(entity.projectType || "")}" /></label><label class="field"><span>Prazo</span><input type="date" name="dueDate" value="${escapeHtml(entity.dueDate || "")}" /></label><label class="field"><span>Prioridade</span><select name="priority"><option value="low" ${entity.priority === "low" ? "selected" : ""}>Baixa</option><option value="medium" ${entity.priority === "medium" ? "selected" : ""}>Media</option><option value="high" ${entity.priority === "high" ? "selected" : ""}>Alta</option></select></label></div><label class="field"><span>Sprint</span><select name="sprintId"><option value="">Sem sprint</option>${sprintOptions}</select></label><label class="field"><span>Resumo</span><textarea name="summary">${escapeHtml(entity.summary || "")}</textarea></label><label class="field"><span>Descricao</span><textarea name="description">${escapeHtml(entity.description || "")}</textarea></label><label class="field"><span>Objetivo principal</span><textarea name="objective">${escapeHtml(entity.objective || "")}</textarea></label>`,
     objective: `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><div class="field-grid three"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Projeto</span><select name="projectId"><option value="">Sem projeto</option>${projectOptions}</select></label><label class="field"><span>Progresso</span><input type="number" name="progress" value="${escapeHtml(entity.progress || 0)}" /></label></div><label class="field"><span>Prazo</span><input type="date" name="dueDate" value="${escapeHtml(entity.dueDate || "")}" /></label><label class="field"><span>Descricao</span><textarea name="description">${escapeHtml(entity.description || "")}</textarea></label>`,
     sprint: `<div class="field-grid two"><label class="field"><span>Nome</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><label class="field"><span>Slot</span><select name="slot">${[1, 2, 3, 4].map((slot) => `<option value="${slot}" ${Number(entity.slot) === slot ? "selected" : ""}>Sprint ${slot}</option>`).join("")}</select></label></div><div class="field-grid three"><label class="field"><span>Inicio</span><input type="date" name="startDate" value="${escapeHtml(entity.startDate || "")}" /></label><label class="field"><span>Fim</span><input type="date" name="endDate" value="${escapeHtml(entity.endDate || "")}" /></label><label class="field"><span>Status</span><select name="status"><option value="planned" ${entity.status === "planned" ? "selected" : ""}>Planejado</option><option value="upcoming" ${entity.status === "upcoming" ? "selected" : ""}>Proximo</option><option value="current" ${entity.status === "current" ? "selected" : ""}>Atual</option></select></label></div><label class="field"><span>Periodo</span><input name="periodLabel" value="${escapeHtml(entity.periodLabel || "")}" /></label><label class="field"><span>Descricao</span><textarea name="description">${escapeHtml(entity.description || entity.theme || "")}</textarea></label><label class="field"><span>Prioridades do sprint</span><textarea name="priorities">${escapeHtml((entity.priorities || []).join("\n"))}</textarea></label><label class="field"><span>Projetos relacionados</span><textarea name="projectIds">${escapeHtml((entity.projectIds || []).join("\n"))}</textarea></label><label class="field"><span>Objetivos relacionados</span><textarea name="objectiveIds">${escapeHtml((entity.objectiveIds || []).join("\n"))}</textarea></label><label class="field"><span>Palavras-chave do sprint</span><textarea name="keywords">${escapeHtml((entity.keywords || []).join("\n"))}</textarea></label><label class="field"><span>Areas priorizadas</span><textarea name="priorityAreas">${escapeHtml((entity.priorityAreas || []).join("\n"))}</textarea></label>`,
     habit: `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><div class="field-grid two"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Meta semanal</span><input type="number" name="targetPerWeek" value="${escapeHtml(entity.targetPerWeek || 3)}" /></label></div><label class="field"><span>Dias preferidos</span><input name="preferredWeekdays" value="${escapeHtml((entity.preferredWeekdays || []).join(", "))}" /></label><label class="field"><span>Nota</span><textarea name="note">${escapeHtml(entity.note || "")}</textarea></label>`,
@@ -1594,7 +1724,7 @@ function renderActivePage(model, options = {}) {
 function renderFooter(model) {
   return `
     <footer class="workspace-footer">
-      <p>Persistencia local em IndexedDB. Para Google Calendar, rode em servidor local e siga <a href="./docs/google-calendar.md">docs/google-calendar.md</a>.</p>
+      <p>Persistencia local-first com sincronizacao opcional via nuvem. Para Google Calendar, rode em servidor local e siga <a href="./docs/google-calendar.md">docs/google-calendar.md</a>.</p>
       <p>Data de hoje: ${escapeHtml(formatShortDate(model.today))}</p>
     </footer>
   `;
@@ -1624,6 +1754,8 @@ export class LifeOSApp {
     this.state = null;
     this.toast = "";
     this.toastTimer = null;
+    this.cloudSyncTimer = null;
+    this.cloudSyncInFlight = false;
     this.dragItem = null;
     this.mobileNavOpen = false;
     this.lastIsMobile = false;
@@ -1632,13 +1764,13 @@ export class LifeOSApp {
   }
 
   async init() {
-    const loaded = await loadAppState(() => buildSeedState(new Date()));
+    const loaded = await loadAppState(() => buildSeedState());
     const incompatible = !loaded?.meta || Number(loaded.meta.version || 0) < APP_VERSION;
-    this.state = incompatible ? await resetAppState(() => buildSeedState(new Date())) : loaded;
+    this.state = incompatible ? await resetAppState(() => buildSeedState()) : loaded;
     this.lastIsMobile = this.isMobileViewport();
     if (this.lastIsMobile && this.state?.ui?.activeSection !== "today") {
       this.state = setActiveSection(this.state, "today");
-      await saveAppState(this.state);
+      this.state = await saveAppState(this.state);
     }
     const support = getVoiceCaptureSupport();
     this.voiceCapture = {
@@ -1647,6 +1779,7 @@ export class LifeOSApp {
       mode: support.mode,
     };
     this.bindEvents();
+    this.refreshCloudSyncLoop();
     this.render();
     window.requestAnimationFrame(() => this.handleResize());
     window.setTimeout(() => this.handleResize(), 120);
@@ -1661,6 +1794,12 @@ export class LifeOSApp {
     this.root.addEventListener("drop", (event) => void this.handleDrop(event));
     this.root.addEventListener("dragend", () => this.handleDragEnd());
     window.addEventListener("resize", () => this.handleResize());
+    window.addEventListener("focus", () => void this.syncCloudState("focus"));
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        void this.syncCloudState("visibility");
+      }
+    });
   }
 
   isMobileViewport() {
@@ -1697,9 +1836,69 @@ export class LifeOSApp {
   }
 
   async persist(message = "") {
-    await saveAppState(this.state);
+    this.state = await saveAppState(this.state);
+    this.refreshCloudSyncLoop();
     if (message) this.showToast(message);
     this.render();
+  }
+
+  refreshCloudSyncLoop() {
+    if (this.cloudSyncTimer) {
+      window.clearInterval(this.cloudSyncTimer);
+      this.cloudSyncTimer = null;
+    }
+
+    if (!this.state || !hasCloudSyncConfigured(this.state)) {
+      return;
+    }
+
+    const config = getCloudSyncConfig(this.state);
+    const intervalMs = Math.max(10, Number(config.pollIntervalSeconds || 20)) * 1000;
+    this.cloudSyncTimer = window.setInterval(() => {
+      void this.syncCloudState("interval");
+    }, intervalMs);
+  }
+
+  async syncCloudState(reason = "manual") {
+    if (!this.state) {
+      return;
+    }
+
+    if (!hasCloudSyncConfigured(this.state)) {
+      if (reason === "manual") {
+        this.showToast("Preencha a configuracao de sincronizacao antes de conectar os dispositivos.");
+      }
+      return;
+    }
+
+    if (this.cloudSyncInFlight) {
+      return;
+    }
+
+    this.cloudSyncInFlight = true;
+    const previousRevision = Number(this.state.meta?.revision || 0);
+    const previousUpdatedAt = String(this.state.meta?.updatedAt || "");
+    const previousPulledAt = String(this.state.settings?.cloudSync?.lastPulledAt || "");
+
+    try {
+      const nextState = await pullRemoteAppState(this.state);
+      const changed = previousRevision !== Number(nextState.meta?.revision || 0)
+        || previousUpdatedAt !== String(nextState.meta?.updatedAt || "")
+        || previousPulledAt !== String(nextState.settings?.cloudSync?.lastPulledAt || "");
+
+      this.state = nextState;
+      this.refreshCloudSyncLoop();
+
+      if (reason === "manual") {
+        this.showToast(this.state.settings?.cloudSync?.lastError || "Sincronizacao concluida.");
+      } else if (changed && !this.state.settings?.cloudSync?.lastError) {
+        this.showToast("Dados atualizados da nuvem.");
+      }
+
+      this.render();
+    } finally {
+      this.cloudSyncInFlight = false;
+    }
   }
 
   openVoiceCapture(sourceSection = "inbox") {
@@ -1723,28 +1922,6 @@ export class LifeOSApp {
       ...createVoiceCaptureState(),
       supported: this.voiceCapture.supported,
       mode: this.voiceCapture.mode,
-    };
-    this.render();
-  }
-
-  analyzeVoiceDraft(transcript) {
-    const cleanedTranscript = String(transcript || "").trim();
-    if (!cleanedTranscript) {
-      this.voiceCapture = {
-        ...this.voiceCapture,
-        error: "Fale ou digite algo antes de analisar.",
-      };
-      this.render();
-      return;
-    }
-
-    const draft = analyzeCaptureText(this.state, cleanedTranscript, this.state.ui.selectedDate || formatISODate(new Date()));
-    this.voiceCapture = {
-      ...this.voiceCapture,
-      transcript: cleanedTranscript,
-      draft,
-      originalDraft: cloneDraft(draft),
-      error: "",
     };
     this.render();
   }
@@ -1775,17 +1952,11 @@ export class LifeOSApp {
             listening: false,
             transcript,
             interim: "",
+            draft: null,
+            originalDraft: null,
+            error: "",
           };
           this.voiceRecognizer = null;
-          if (transcript) {
-            const draft = analyzeCaptureText(this.state, transcript, this.state.ui.selectedDate || formatISODate(new Date()));
-            this.voiceCapture = {
-              ...this.voiceCapture,
-              draft,
-              originalDraft: cloneDraft(draft),
-              error: "",
-            };
-          }
           this.render();
         },
         onError: (message) => {
@@ -1806,11 +1977,6 @@ export class LifeOSApp {
             interim: payload.interim || "",
             error: "",
           };
-          if (payload.isFinal && payload.finalText) {
-            const draft = analyzeCaptureText(this.state, payload.finalText, this.state.ui.selectedDate || formatISODate(new Date()));
-            this.voiceCapture.draft = draft;
-            this.voiceCapture.originalDraft = cloneDraft(draft);
-          }
           this.render();
         },
       });
@@ -1841,7 +2007,7 @@ export class LifeOSApp {
   async handleClick(event) {
     const trigger = event.target.closest("[data-action], [data-task-action]");
     if (!trigger) return;
-    const today = formatISODate(new Date());
+    const today = getCurrentISODate();
 
     if (trigger.dataset.taskAction) {
       const taskTitle = this.state.tasks.find((task) => task.id === trigger.dataset.taskId)?.title || "";
@@ -1856,7 +2022,6 @@ export class LifeOSApp {
     if (action === "close-voice-capture-backdrop") { if (event.target !== trigger) return; this.closeVoiceCapture(); return; }
     if (action === "start-voice-capture") { this.startVoiceCapture(); return; }
     if (action === "stop-voice-capture") { this.stopVoiceCapture(); return; }
-    if (action === "analyze-voice-capture") { this.analyzeVoiceDraft(this.voiceCapture.transcript || this.voiceCapture.interim || ""); return; }
     if (action === "toggle-mobile-nav") { this.mobileNavOpen = true; this.render(); return; }
     if (action === "close-mobile-nav") { this.mobileNavOpen = false; this.render(); return; }
     if (action === "navigate") { this.state = setActiveSection(this.state, trigger.dataset.section); this.mobileNavOpen = false; await this.persist(); return; }
@@ -1866,6 +2031,14 @@ export class LifeOSApp {
     if (action === "clear-filters") { this.state = clearFilters(this.state); await this.persist("Filtros limpos."); return; }
     if (action === "set-priority-method") { this.state = setPriorityMethod(this.state, trigger.dataset.method); await this.persist("Metodo atualizado."); return; }
     if (action === "set-active-sprint") { this.state = setActiveSprint(this.state, trigger.dataset.sprintId); await this.persist("Sprint atualizada."); return; }
+    if (action === "select-project") { this.state = setSelectedProject(this.state, trigger.dataset.projectId); await this.persist(); return; }
+    if (action === "create-project-template") { this.state = createProjectFromTemplate(this.state, trigger.dataset.projectTemplate); await this.persist("Projeto criado a partir do template."); return; }
+    if (action === "generate-project-task") {
+      const result = generateTaskFromProjectSource(this.state, trigger.dataset.projectId, trigger.dataset.projectSource, trigger.dataset.projectEntry);
+      this.state = result.nextState;
+      await this.persist(result.message);
+      return;
+    }
     if (action === "set-energy") { this.state = setWeeklyEnergy(this.state, trigger.dataset.energy); await this.persist("Energia semanal ajustada."); return; }
     if (action === "toggle-task-subtask") {
       const taskTitle = this.state.tasks.find((task) => task.id === trigger.dataset.taskId)?.title || "";
@@ -1893,9 +2066,17 @@ export class LifeOSApp {
     }
     if (action === "save-layout-default") { this.state = saveCurrentLayoutAsDefault(this.state); await this.persist("Layout atual salvo."); return; }
     if (action === "restore-layout-default") { this.state = restoreLayoutDefault(this.state); await this.persist("Layout restaurado."); return; }
+    if (action === "generate-sync-key") {
+      const field = this.root.querySelector('input[name="syncWorkspaceKey"]');
+      if (field instanceof HTMLInputElement) {
+        field.value = createWorkspaceKey();
+      }
+      return;
+    }
+    if (action === "sync-cloud-now") { await this.syncCloudState("manual"); return; }
     if (action === "connect-google") { await this.handleGoogleConnect(); return; }
     if (action === "sync-google") { await this.handleGoogleSync(); return; }
-    if (action === "reset-app") { if (!window.confirm("Deseja resetar a base local para a seed atual?")) return; this.state = await resetAppState(() => buildSeedState(new Date())); this.showToast("Base local resetada."); this.render(); }
+    if (action === "reset-app") { if (!window.confirm("Deseja resetar a base local para a seed atual?")) return; this.state = await resetAppState(() => buildSeedState()); this.refreshCloudSyncLoop(); this.showToast("Base local resetada."); this.render(); }
   }
 
   async handleChange(event) {
@@ -1903,23 +2084,13 @@ export class LifeOSApp {
     if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement)) return;
     const voiceForm = target.closest('[data-form="voice-capture-confirm"]');
     if (voiceForm) {
-      if (target.name === "transcript") {
-        this.voiceCapture = {
-          ...this.voiceCapture,
-          transcript: target.value,
-          interim: "",
-        };
-      } else {
-        this.voiceCapture = {
-          ...this.voiceCapture,
-          draft: {
-            ...(this.voiceCapture.draft || {}),
-            [target.name]: target.name === "checklist"
-              ? target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)
-              : target.value,
-          },
-        };
-      }
+      this.voiceCapture = {
+        ...this.voiceCapture,
+        transcript: target.value,
+        interim: "",
+        draft: null,
+        originalDraft: null,
+      };
       return;
     }
     if (target.dataset.filter) { this.state = setFilter(this.state, target.dataset.filter, target.value); await this.persist(); return; }
@@ -1947,18 +2118,32 @@ export class LifeOSApp {
     event.preventDefault();
     if (form.dataset.form === "capture-task") {
       const payload = formDataToObject(form);
-      const result = captureInboxTask(this.state, payload.title || "", this.state.ui.selectedDate || formatISODate(new Date()));
-      this.state = setActiveSection(result.nextState, "organize");
+      const result = captureInboxTask(this.state, payload.title || "", this.state.ui.selectedDate || getCurrentISODate());
+      this.state = result.nextState;
       form.reset();
       await this.persist(result.message);
+      return;
+    }
+    if (form.dataset.form === "project-workspace") {
+      this.state = saveEntity(this.state, "project", formDataToObject(form));
+      await this.persist("Projeto atualizado.");
       return;
     }
     if (form.dataset.form === "checklist-quick-add") { this.state = addChecklistTask(this.state, formDataToObject(form)); form.reset(); await this.persist("Nova tarefa criada na checklist."); return; }
     if (form.dataset.form === "voice-capture-confirm") {
       const payload = formDataToObject(form);
+      const transcript = String(payload.transcript || this.voiceCapture.transcript || "").trim();
+      if (!transcript) {
+        this.voiceCapture = {
+          ...this.voiceCapture,
+          error: "Fale ou digite algo antes de salvar na Inbox.",
+        };
+        this.render();
+        return;
+      }
       const result = confirmVoiceCapture(this.state, payload, {
-        transcript: payload.transcript || this.voiceCapture.transcript || "",
-        understood: this.voiceCapture.originalDraft || this.voiceCapture.draft || {},
+        transcript,
+        understood: analyzeCaptureText(this.state, transcript, this.state.ui.selectedDate || getCurrentISODate()),
         sourceSection: this.voiceCapture.sourceSection || this.state.ui.activeSection || "inbox",
       });
       this.state = result.nextState;
@@ -1972,7 +2157,11 @@ export class LifeOSApp {
     }
     if (form.dataset.form === "google-config") { this.state = saveGoogleCalendarConfig(this.state, formDataToObject(form)); await this.persist("Configuracao do Google salva."); return; }
     if (form.dataset.form === "entity-editor") { const payload = formDataToObject(form); this.state = saveEntity(this.state, payload.kind, payload); await this.persist("Item salvo."); return; }
-    if (form.dataset.form === "settings-form") { this.state = saveSettings(this.state, formDataToObject(form)); await this.persist("Configuracoes salvas."); }
+    if (form.dataset.form === "settings-form") {
+      this.state = saveSettings(this.state, formDataToObject(form));
+      this.refreshCloudSyncLoop();
+      await this.persist("Configuracoes salvas.");
+    }
   }
 
   handleDragStart(event) {
@@ -2163,8 +2352,8 @@ export class LifeOSApp {
     this.lastIsMobile = isMobile;
     if (!isMobile) this.mobileNavOpen = false;
     this.root.innerHTML = isMobile
-      ? `<div class="app-shell mobile-shell density-${escapeHtml(model.settings.visualDensity)} tone-${escapeHtml(model.settings.accentTone)}">${this.toast ? `<div class="toast">${escapeHtml(this.toast)}</div>` : ""}${this.mobileNavOpen ? `<button class="mobile-nav-backdrop" data-action="close-mobile-nav" aria-label="Fechar menu"></button>` : ""}${renderSidebar(model, { isMobile: true, navOpen: this.mobileNavOpen })}<main class="workspace-main mobile-main">${renderMobileTopbar(model, { navOpen: this.mobileNavOpen })}${renderHeader(model, { isMobile: true })}<div class="page-shell">${renderActivePage(model, { isMobile: true })}</div>${renderFooter(model)}</main>${renderFloatingAlert(model.activeSection === "today" ? model.floatingAlert : null, { isMobile: true })}${renderVoiceCaptureModal(this.voiceCapture, model)}${renderEditorModal(model.editorView, model.options)}</div>`
-      : `<div class="app-shell desktop-shell density-${escapeHtml(model.settings.visualDensity)} tone-${escapeHtml(model.settings.accentTone)}">${this.toast ? `<div class="toast">${escapeHtml(this.toast)}</div>` : ""}<main class="workspace-root">${renderHeader(model, { isMobile: false })}<section class="workspace-desktop-grid"><div class="workspace-sidebar-column">${renderSidebar(model, { isMobile: false, navOpen: false })}</div><section class="workspace-content-column"><div class="page-shell">${renderActivePage(model, { isMobile: false })}</div>${renderFooter(model)}</section></section></main>${renderFloatingAlert(model.activeSection === "today" ? model.floatingAlert : null, { isMobile: false })}${renderVoiceCaptureModal(this.voiceCapture, model)}${renderEditorModal(model.editorView, model.options)}</div>`;
+      ? `<div class="app-shell mobile-shell density-${escapeHtml(model.settings.visualDensity)} tone-${escapeHtml(model.settings.accentTone)}">${this.toast ? `<div class="toast">${escapeHtml(this.toast)}</div>` : ""}${this.mobileNavOpen ? `<button class="mobile-nav-backdrop" data-action="close-mobile-nav" aria-label="Fechar menu"></button>` : ""}${renderSidebar(model, { isMobile: true, navOpen: this.mobileNavOpen })}<main class="workspace-main mobile-main">${renderMobileTopbar(model, { navOpen: this.mobileNavOpen })}${renderHeader(model, { isMobile: true })}<div class="page-shell">${renderActivePage(model, { isMobile: true })}</div>${renderFooter(model)}</main>${renderFloatingAlert(model.activeSection === "today" ? model.floatingAlert : null, { isMobile: true })}${renderVoiceCaptureModal(this.voiceCapture)}${renderEditorModal(model.editorView, model.options)}</div>`
+      : `<div class="app-shell desktop-shell density-${escapeHtml(model.settings.visualDensity)} tone-${escapeHtml(model.settings.accentTone)}">${this.toast ? `<div class="toast">${escapeHtml(this.toast)}</div>` : ""}<main class="workspace-root">${renderHeader(model, { isMobile: false })}<section class="workspace-desktop-grid"><div class="workspace-sidebar-column">${renderSidebar(model, { isMobile: false, navOpen: false })}</div><section class="workspace-content-column"><div class="page-shell">${renderActivePage(model, { isMobile: false })}</div>${renderFooter(model)}</section></section></main>${renderFloatingAlert(model.activeSection === "today" ? model.floatingAlert : null, { isMobile: false })}${renderVoiceCaptureModal(this.voiceCapture)}${renderEditorModal(model.editorView, model.options)}</div>`;
   }
 }
 

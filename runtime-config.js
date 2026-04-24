@@ -20,6 +20,15 @@ window.__LIFE_OS_RUNTIME__ = window.__LIFE_OS_RUNTIME__ || {
     apiKey: "",
     calendarId: "primary",
   },
+  sync: {
+    enabled: false,
+    provider: "supabase",
+    projectUrl: "",
+    anonKey: "",
+    tableName: "life_os_snapshots",
+    workspaceKey: "",
+    pollIntervalSeconds: 20,
+  },
   pwa: {
     enabled: false,
     serviceWorkerPath: "/sw.js",

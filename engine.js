@@ -1,4 +1,5 @@
 import {
+  APP_TIMEZONE,
   addDays,
   clamp,
   createLocalDateTime,
@@ -7,6 +8,8 @@ import {
   formatLongDate,
   formatShortDate,
   formatWeekday,
+  getCurrentISODate,
+  getCurrentYear,
   getWeekDates,
   getWeekdayKey,
 } from "./date.js";
@@ -23,6 +26,175 @@ const ENERGY_FACTOR = { 1: 0.7, 2: 0.85, 3: 1, 4: 1.12, 5: 1.22 };
 const PRIORITY_BASE = { low: 18, medium: 30, high: 44 };
 const LAYOUT_WIDTH_ORDER = ["compact", "medium", "full"];
 const LAYOUT_HEIGHT_ORDER = ["compact", "regular", "tall"];
+const PROJECT_TEMPLATES = [
+  {
+    id: "work",
+    label: "Projeto de trabalho",
+    areaId: "area-work",
+    projectType: "Projeto de trabalho",
+    color: "#5f7859",
+    summary: "Projeto com entregas, backlog, referencias e proximas acoes claras.",
+    objective: "Avancar com clareza e manter execucao consistente.",
+    description: "Workspace para organizar escopo, decisoes, backlog e plano de acao do projeto.",
+    infoLinks: [
+      { label: "Drive do projeto", url: "https://drive.google.com/" },
+    ],
+    referenceEntries: [
+      { label: "Briefing / notas maestras", url: "" },
+    ],
+    observationLines: ["Mapear o contexto atual antes de abrir novas frentes."],
+    decisionLines: ["Registrar decisoes relevantes logo que acontecerem."],
+    okrs: [
+      { title: "Dar tracao no projeto", status: "active", progress: 35, keyResults: ["Definir escopo claro", "Executar as 3 proximas entregas", "Fechar feedback com rapidez"] },
+    ],
+    backlogItems: [
+      { title: "Mapear pendencias futuras", notes: "Itens que ainda nao vao para a semana atual." },
+      { title: "Levantar oportunidades de melhoria", notes: "" },
+    ],
+    baseActivities: [
+      { title: "Abrir contexto do projeto", checklist: ["ler notas principais", "revisar pendencias", "anotar proxima acao"], context: "planning", estimatedMinutes: 20, priority: "medium", bucket: "priority" },
+      { title: "Executar bloco de entrega", checklist: ["abrir material", "trabalhar sem interrupcao", "fechar proximo passo"], context: "deep-work", estimatedMinutes: 60, priority: "high", bucket: "do-now" },
+    ],
+    actionPlan: [
+      { title: "Fechar proxima entrega principal", nextAction: "Abrir material atual e revisar o primeiro gargalo.", checklist: ["revisar insumos", "executar entrega", "registrar decisao"], bucket: "priority" },
+    ],
+  },
+  {
+    id: "personal",
+    label: "Projeto pessoal",
+    areaId: "area-personal",
+    projectType: "Projeto pessoal",
+    color: "#6d7a70",
+    summary: "Projeto de vida pessoal com foco em clareza, etapas e acompanhamento leve.",
+    objective: "Organizar um objetivo pessoal em passos claros.",
+    description: "Espaco para anotar referencias, backlog e proximas acoes sem poluir a execucao do dia.",
+    backlogItems: [
+      { title: "Listar ideias e alternativas", notes: "" },
+    ],
+    baseActivities: [
+      { title: "Revisao semanal do projeto", checklist: ["ver o que andou", "ajustar proximo passo"], context: "planning", estimatedMinutes: 20, priority: "medium", bucket: "priority" },
+    ],
+    actionPlan: [
+      { title: "Definir proxima acao real", nextAction: "Escolher o menor passo que destrava o projeto.", checklist: ["quebrar em etapa pequena"], bucket: "priority" },
+    ],
+  },
+  {
+    id: "move",
+    label: "Projeto de mudanca",
+    areaId: "area-move",
+    projectType: "Projeto de mudanca",
+    color: "#7d705a",
+    summary: "Mudanca com etapas, prazos, custos e estrutura por frentes.",
+    objective: "Chegar pronto para a transicao ate novembro.",
+    description: "Organiza frente de casa, trabalho, custos e pendencias da mudanca.",
+    backlogItems: [
+      { title: "Mapear itens da nova casa", notes: "" },
+      { title: "Levantar custos e prioridades", notes: "" },
+    ],
+    baseActivities: [
+      { title: "Revisao da mudanca", checklist: ["atualizar checklist", "validar prazo", "checar custo"], context: "planning", estimatedMinutes: 30, priority: "high", bucket: "priority" },
+    ],
+    actionPlan: [
+      { title: "Fechar proxima frente da mudanca", nextAction: "Escolher uma frente da semana e destrinchar.", checklist: ["definir prioridade", "criar tarefas reais"], bucket: "priority" },
+    ],
+  },
+  {
+    id: "travel",
+    label: "Projeto de viagem",
+    areaId: "area-personal",
+    projectType: "Projeto de viagem",
+    color: "#6e7f93",
+    summary: "Viagem organizada com planejamento, reservas e checklist.",
+    objective: "Evitar esquecimentos e concentrar tudo em um lugar so.",
+    description: "Espaco para roteiro, reservas, custos e pendencias da viagem.",
+    backlogItems: [
+      { title: "Listar reservas e documentos", notes: "" },
+    ],
+    baseActivities: [
+      { title: "Revisar documentos", checklist: ["confirmar datas", "checar comprovantes"], context: "admin", estimatedMinutes: 25, priority: "medium", bucket: "priority" },
+    ],
+    actionPlan: [
+      { title: "Fechar a proxima reserva", nextAction: "Abrir a principal pendencia da viagem.", checklist: ["comparar opcoes", "confirmar"], bucket: "priority" },
+    ],
+  },
+  {
+    id: "content",
+    label: "Projeto de conteudo",
+    areaId: "area-work",
+    projectType: "Projeto de conteudo",
+    color: "#8d6d7d",
+    summary: "Workspace para ideias, pautas, roteiros, backlog e execucao de conteudo.",
+    objective: "Gerar consistencia e crescimento com menos atrito.",
+    description: "Centraliza ideias, referencias, roteiros e a traducao para tarefas reais.",
+    backlogItems: [
+      { title: "Anotar ideias de pauta", notes: "" },
+      { title: "Guardar referencias de linguagem e formato", notes: "" },
+    ],
+    baseActivities: [
+      { title: "Abrir pauta e estruturar roteiro", checklist: ["definir angulo", "montar estrutura", "fechar CTA"], context: "creative", estimatedMinutes: 45, priority: "medium", bucket: "priority" },
+    ],
+    actionPlan: [
+      { title: "Gerar o proximo roteiro", nextAction: "Escolher uma ideia do backlog e transformar em roteiro.", checklist: ["selecionar tema", "estruturar topicos"], bucket: "priority" },
+    ],
+  },
+  {
+    id: "finance",
+    label: "Projeto financeiro",
+    areaId: "area-finance",
+    projectType: "Projeto financeiro",
+    color: "#677066",
+    summary: "Projeto para estruturar caixa, custos, metas e decisoes financeiras.",
+    objective: "Dar previsibilidade e clareza para as decisoes.",
+    description: "Concentra referencias, metas, backlog e proximas acoes ligadas ao financeiro.",
+    backlogItems: [
+      { title: "Mapear despesas e pendencias", notes: "" },
+    ],
+    baseActivities: [
+      { title: "Revisao financeira", checklist: ["atualizar numeros", "registrar decisoes"], context: "admin", estimatedMinutes: 30, priority: "high", bucket: "priority" },
+    ],
+    actionPlan: [
+      { title: "Definir proxima decisao financeira", nextAction: "Escolher o item com maior impacto imediato.", checklist: ["avaliar impacto", "definir proximo passo"], bucket: "priority" },
+    ],
+  },
+  {
+    id: "home",
+    label: "Projeto de casa",
+    areaId: "area-home",
+    projectType: "Projeto de casa",
+    color: "#7a7361",
+    summary: "Projeto para organizar melhorias, compras e pendencias da casa.",
+    objective: "Dar andamento sem misturar tudo na rotina solta.",
+    description: "Espaco para backlog, referencias e geracao de tarefas da casa.",
+    backlogItems: [
+      { title: "Mapear melhorias e compras", notes: "" },
+    ],
+    baseActivities: [
+      { title: "Revisao da frente da casa", checklist: ["ver pendencias", "definir proxima acao"], context: "flex", estimatedMinutes: 20, priority: "medium", bucket: "priority" },
+    ],
+    actionPlan: [
+      { title: "Fechar uma frente da casa", nextAction: "Escolher o item que mais reduz atrito no dia a dia.", checklist: ["quebrar em etapas"], bucket: "priority" },
+    ],
+  },
+  {
+    id: "client",
+    label: "Projeto de cliente",
+    areaId: "area-work",
+    projectType: "Projeto de cliente",
+    color: "#61785f",
+    summary: "Projeto orientado a entrega, follow-up, briefing e decisao com cliente.",
+    objective: "Transformar atendimento em execucao organizada e previsivel.",
+    description: "Workspace para briefing, backlog, decisao e geracao de tarefas do cliente.",
+    backlogItems: [
+      { title: "Registrar pendencias e demandas abertas", notes: "" },
+    ],
+    baseActivities: [
+      { title: "Preparar proxima entrega ao cliente", checklist: ["revisar briefing", "fechar escopo", "definir envio"], context: "deep-work", estimatedMinutes: 50, priority: "high", bucket: "priority" },
+    ],
+    actionPlan: [
+      { title: "Fechar a proxima acao do cliente", nextAction: "Abrir a demanda ativa e tirar a proxima travada.", checklist: ["revisar contexto", "executar", "registrar proximo passo"], bucket: "priority" },
+    ],
+  },
+];
 const DEFAULT_LAYOUTS = {
   dashboard: [
     { id: "overview", width: "full", height: "compact", frame: null },
@@ -355,6 +527,22 @@ function defaultVoiceAssistantSettings() {
   };
 }
 
+function defaultCloudSyncSettings() {
+  return {
+    enabled: false,
+    provider: "supabase",
+    projectUrl: "",
+    anonKey: "",
+    tableName: "life_os_snapshots",
+    workspaceKey: "",
+    pollIntervalSeconds: 20,
+    lastSyncedAt: "",
+    lastPulledAt: "",
+    lastError: "",
+    deviceId: "",
+  };
+}
+
 function parseVoiceAliasLines(value, fallback = []) {
   if (Array.isArray(value)) {
     return value
@@ -436,6 +624,191 @@ function parseVoiceAssociationLines(value, fallback = []) {
     .filter((entry) => entry.term);
 }
 
+function parseLineList(value, fallback = []) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry || "").trim()).filter(Boolean);
+  }
+
+  if (typeof value !== "string") {
+    return cloneValue(fallback || []);
+  }
+
+  return value
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function parseProjectLinkEntries(value, fallback = []) {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => ({
+        id: entry?.id || makeId("plink"),
+        label: String(entry?.label || "").trim(),
+        url: String(entry?.url || "").trim(),
+      }))
+      .filter((entry) => entry.label || entry.url);
+  }
+
+  if (typeof value !== "string") {
+    return cloneValue(fallback || []);
+  }
+
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [label = "", url = ""] = line.split("|").map((part) => part.trim());
+      return {
+        id: makeId("plink"),
+        label: label || url,
+        url,
+      };
+    })
+    .filter((entry) => entry.label || entry.url);
+}
+
+function parseProjectOkrs(value, fallback = []) {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => ({
+        id: entry?.id || makeId("okr"),
+        title: String(entry?.title || "").trim(),
+        status: String(entry?.status || "active").trim() || "active",
+        progress: clamp(toNumber(entry?.progress, 0), 0, 100),
+        keyResults: parseLineList(entry?.keyResults || [], []),
+      }))
+      .filter((entry) => entry.title);
+  }
+
+  if (typeof value !== "string") {
+    return cloneValue(fallback || []);
+  }
+
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [title = "", status = "active", progress = "0", keyResults = ""] = line.split("|").map((part) => part.trim());
+      return {
+        id: makeId("okr"),
+        title,
+        status: status || "active",
+        progress: clamp(toNumber(progress, 0), 0, 100),
+        keyResults: keyResults.split(";").map((item) => item.trim()).filter(Boolean),
+      };
+    })
+    .filter((entry) => entry.title);
+}
+
+function parseProjectBacklogItems(value, fallback = []) {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => ({
+        id: entry?.id || makeId("pbacklog"),
+        title: String(entry?.title || "").trim(),
+        notes: String(entry?.notes || "").trim(),
+      }))
+      .filter((entry) => entry.title);
+  }
+
+  if (typeof value !== "string") {
+    return cloneValue(fallback || []);
+  }
+
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [title = "", notes = ""] = line.split("|").map((part) => part.trim());
+      return {
+        id: makeId("pbacklog"),
+        title,
+        notes,
+      };
+    })
+    .filter((entry) => entry.title);
+}
+
+function parseProjectBaseActivities(value, fallback = []) {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => ({
+        id: entry?.id || makeId("pbase"),
+        title: String(entry?.title || "").trim(),
+        checklist: parseLineList(entry?.checklist || [], []),
+        context: String(entry?.context || "flex").trim() || "flex",
+        estimatedMinutes: toNumber(entry?.estimatedMinutes, 30),
+        priority: String(entry?.priority || "medium").trim() || "medium",
+        bucket: String(entry?.bucket || "priority").trim() || "priority",
+      }))
+      .filter((entry) => entry.title);
+  }
+
+  if (typeof value !== "string") {
+    return cloneValue(fallback || []);
+  }
+
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [title = "", checklist = ""] = line.split("|").map((part) => part.trim());
+      return {
+        id: makeId("pbase"),
+        title,
+        checklist: checklist.split(";").map((item) => item.trim()).filter(Boolean),
+        context: "flex",
+        estimatedMinutes: 30,
+        priority: "medium",
+        bucket: "priority",
+      };
+    })
+    .filter((entry) => entry.title);
+}
+
+function parseProjectActionPlan(value, fallback = []) {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => ({
+        id: entry?.id || makeId("pplan"),
+        title: String(entry?.title || "").trim(),
+        nextAction: String(entry?.nextAction || "").trim(),
+        checklist: parseLineList(entry?.checklist || [], []),
+        bucket: String(entry?.bucket || "priority").trim() || "priority",
+      }))
+      .filter((entry) => entry.title);
+  }
+
+  if (typeof value !== "string") {
+    return cloneValue(fallback || []);
+  }
+
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [title = "", nextAction = "", checklist = ""] = line.split("|").map((part) => part.trim());
+      return {
+        id: makeId("pplan"),
+        title,
+        nextAction,
+        checklist: checklist.split(";").map((item) => item.trim()).filter(Boolean),
+        bucket: "priority",
+      };
+    })
+    .filter((entry) => entry.title);
+}
+
+function getProjectTemplate(templateId) {
+  return PROJECT_TEMPLATES.find((template) => template.id === templateId) || PROJECT_TEMPLATES[0];
+}
+
 function formatVoiceAliasLines(entries = []) {
   return (entries || [])
     .map((entry) => `${entry.term} => ${entry.value}`)
@@ -473,6 +846,25 @@ function getVoiceAssistantSettings(state) {
       updatedAt: item?.updatedAt || nowIso(),
     })).filter((item) => item.phrase) : [],
     history: Array.isArray(source.history) ? source.history.slice(0, 60) : [],
+  };
+}
+
+function getCloudSyncSettings(state) {
+  const defaults = defaultCloudSyncSettings();
+  const source = state?.settings?.cloudSync || {};
+
+  return {
+    enabled: toBoolean(source.enabled, defaults.enabled),
+    provider: source.provider || defaults.provider,
+    projectUrl: String(source.projectUrl || defaults.projectUrl || "").trim(),
+    anonKey: String(source.anonKey || defaults.anonKey || "").trim(),
+    tableName: String(source.tableName || defaults.tableName || "life_os_snapshots").trim() || "life_os_snapshots",
+    workspaceKey: String(source.workspaceKey || defaults.workspaceKey || "").trim(),
+    pollIntervalSeconds: toNumber(source.pollIntervalSeconds, defaults.pollIntervalSeconds),
+    lastSyncedAt: String(source.lastSyncedAt || ""),
+    lastPulledAt: String(source.lastPulledAt || ""),
+    lastError: String(source.lastError || ""),
+    deviceId: String(source.deviceId || defaults.deviceId || "").trim(),
   };
 }
 
@@ -884,7 +1276,7 @@ function buildVoiceTitle(transcript, intent, checklist = []) {
   }[intent] || "Nova captura por voz";
 }
 
-export function analyzeCaptureText(state, transcript, referenceDate = formatISODate(new Date())) {
+export function analyzeCaptureText(state, transcript, referenceDate = getCurrentISODate()) {
   const cleanedTranscript = String(transcript || "").trim();
   const normalizedTranscript = normalizeSearchText(cleanedTranscript);
   const voiceSettings = getVoiceAssistantSettings(state);
@@ -1019,13 +1411,13 @@ function migrateRemovedModules(state) {
 }
 
 function prepareState(state) {
-  state.meta = state.meta || { appName: "Life OS Thz 2026", version: 5 };
+  state.meta = state.meta || { appName: "Life OS Thz 2026", version: 6 };
   state.profile = state.profile || {};
   state.tasks = state.tasks || [];
   state.areas = state.areas || [];
-  state.projects = state.projects || [];
+  state.projects = (state.projects || []).map((project) => normalizeProjectPayload(project, project));
   state.objectives = state.objectives || [];
-  state.sprints = normalizeSprints(state.sprints || [], Number(String(state.ui?.selectedDate || formatISODate(new Date())).slice(0, 4)));
+  state.sprints = normalizeSprints(state.sprints || [], Number(String(state.ui?.selectedDate || getCurrentISODate()).slice(0, 4)));
   state.blocks = state.blocks || [];
   state.dayTypes = state.dayTypes || [];
   state.dayOverrides = state.dayOverrides || [];
@@ -1082,6 +1474,7 @@ function prepareState(state) {
     },
     reasoningLine: state.settings?.reasoningLine || "",
     voiceAssistant: getVoiceAssistantSettings(state),
+    cloudSync: getCloudSyncSettings(state),
     googleCalendar: {
       clientId: state.settings?.googleCalendar?.clientId || "",
       apiKey: state.settings?.googleCalendar?.apiKey || "",
@@ -1093,9 +1486,17 @@ function prepareState(state) {
     },
   };
 
+  state.meta = {
+    ...(state.meta || {}),
+    revision: toNumber(state.meta?.revision, 1),
+    updatedAt: state.meta?.updatedAt || state.meta?.seededAt || nowIso(),
+    timezone: state.meta?.timezone || APP_TIMEZONE,
+  };
+
   state.ui = {
     activeSection: state.ui?.activeSection || "today",
-    selectedDate: state.ui?.selectedDate || formatISODate(new Date()),
+    selectedDate: state.ui?.selectedDate || getCurrentISODate(),
+    selectedProjectId: state.ui?.selectedProjectId || state.projects[0]?.id || "",
     priorityMethod: state.ui?.priorityMethod || "pipeline",
     checklistView: state.ui?.checklistView || "all",
     filters: { ...DEFAULT_FILTERS, ...(state.ui?.filters || {}) },
@@ -1104,6 +1505,10 @@ function prepareState(state) {
       id: state.ui?.editor?.id || "",
     },
   };
+
+  if (!state.projects.some((project) => project.id === state.ui.selectedProjectId)) {
+    state.ui.selectedProjectId = state.projects[0]?.id || "";
+  }
 
   state.areas = state.areas.map((area) => normalizeAreaPayload(area, area));
   state.objectives = state.objectives.map((objective) => normalizeObjectivePayload(objective, objective));
@@ -1164,7 +1569,7 @@ function getSprintRangeForSlot(slot, year) {
   return ranges[slot] || ranges[1];
 }
 
-function normalizeSprintPayload(payload = {}, existing = null, index = 0, referenceYear = new Date().getFullYear()) {
+function normalizeSprintPayload(payload = {}, existing = null, index = 0, referenceYear = getCurrentYear()) {
   const slot = inferSprintSlot(payload, index);
   const range = getSprintRangeForSlot(slot, referenceYear);
   const existingPriorities = existing?.priorities || existing?.keyResults || [];
@@ -1189,7 +1594,7 @@ function normalizeSprintPayload(payload = {}, existing = null, index = 0, refere
   };
 }
 
-function normalizeSprints(source = [], referenceYear = new Date().getFullYear()) {
+function normalizeSprints(source = [], referenceYear = getCurrentYear()) {
   const normalized = Array.isArray(source)
     ? source.map((sprint, index) => normalizeSprintPayload(sprint, sprint, index, referenceYear))
     : [];
@@ -1213,7 +1618,7 @@ function normalizeSprints(source = [], referenceYear = new Date().getFullYear())
   const hasCurrent = ordered.some((sprint) => sprint.status === "current");
 
   if (!hasCurrent) {
-    const today = formatISODate(new Date());
+    const today = getCurrentISODate();
     const active = ordered.find((sprint) => sprint.startDate <= today && sprint.endDate >= today) || ordered[0];
     ordered.forEach((sprint) => {
       sprint.status = sprint.id === active.id ? "current" : sprint.status === "current" ? "planned" : sprint.status;
@@ -2029,17 +2434,57 @@ function buildAreaSummaries(state, tasks) {
 function buildProjectSummaries(state, tasks) {
   return state.projects.map((project) => {
     const projectTasks = tasks.filter((task) => task.projectId === project.id);
+    const openTasks = projectTasks.filter((task) => task.status !== "done");
+    const doneTasks = projectTasks.filter((task) => task.status === "done");
+
     return {
       ...project,
-      openCount: projectTasks.length,
+      openCount: openTasks.length,
+      doneCount: doneTasks.length,
       progress: clamp(
-        Math.round(projectTasks.filter((task) => task.status === "done").length * 100 / Math.max(1, projectTasks.length)),
+        Math.round(doneTasks.length * 100 / Math.max(1, projectTasks.length)),
         0,
         100,
       ),
-      nextTasks: projectTasks.slice(0, 3),
+      nextTasks: openTasks.slice(0, 3),
+      sprintTitle: project.sprintId ? getSprintById(state, project.sprintId)?.title || "" : "",
+      active: state.ui?.selectedProjectId === project.id,
     };
   });
+}
+
+function buildProjectsWorkspaceModel(state, tasks) {
+  const summaries = buildProjectSummaries(state, tasks);
+  const selectedProject = state.projects.find((project) => project.id === state.ui.selectedProjectId) || state.projects[0] || null;
+
+  if (!selectedProject) {
+    return {
+      summaries,
+      selected: null,
+      templates: PROJECT_TEMPLATES,
+    };
+  }
+
+  const selectedTasks = tasks.filter((task) => task.projectId === selectedProject.id);
+  const generatedTasks = selectedTasks.filter((task) => ["project", "manual", "capture", "voice", "checklist"].includes(task.source));
+  const sprint = selectedProject.sprintId ? getSprintById(state, selectedProject.sprintId) : null;
+
+  return {
+    summaries,
+    templates: PROJECT_TEMPLATES,
+    selected: {
+      ...selectedProject,
+      sprintTitle: sprint?.title || "",
+      sprintStatus: sprint?.status || "",
+      openTasks: selectedTasks.filter((task) => task.status !== "done"),
+      generatedTasks: generatedTasks.filter((task) => task.status !== "done").slice(0, 8),
+      completedTasks: selectedTasks.filter((task) => task.status === "done").slice(0, 5),
+      backlogCount: selectedProject.backlogItems.length,
+      baseCount: selectedProject.baseActivities.length,
+      okrCount: selectedProject.okrs.length,
+      actionCount: selectedProject.actionPlan.length,
+    },
+  };
 }
 
 function makeChecklistGroup(id, label, entries, emptyMessage = "") {
@@ -2320,7 +2765,7 @@ function buildInboxModel(tasks) {
     recent,
     counts: {
       raw: raw.length,
-      captured: tasks.filter((task) => task.location === "captured").length,
+      recent: recent.length,
     },
   };
 }
@@ -2376,6 +2821,7 @@ function buildSettingsModel(state) {
     layoutMode: state.settings.layoutMode,
     layoutCapabilities: state.settings.layoutCapabilities,
     architecture: state.settings.architecture,
+    cloudSync: cloneValue(state.settings.cloudSync),
     voiceAssistant: {
       ...cloneValue(state.settings.voiceAssistant),
       projectAliasesText: formatVoiceAliasLines(state.settings.voiceAssistant.projectAliases),
@@ -2432,7 +2878,27 @@ function blankEntity(kind, state) {
   }
 
   if (kind === "project") {
-    return { id: "", name: "", areaId: "area-work", status: "active", color: "#8b6c50", summary: "" };
+    const template = getProjectTemplate("work");
+    return normalizeProjectPayload({
+      id: "",
+      name: "",
+      templateId: template.id,
+      areaId: template.areaId,
+      projectType: template.projectType,
+      status: "active",
+      color: template.color,
+      summary: template.summary,
+      description: template.description,
+      objective: template.objective,
+      infoLinks: template.infoLinks,
+      referenceEntries: template.referenceEntries,
+      observationLines: template.observationLines,
+      decisionLines: template.decisionLines,
+      okrs: template.okrs,
+      backlogItems: template.backlogItems,
+      baseActivities: template.baseActivities,
+      actionPlan: template.actionPlan,
+    }, null);
   }
 
   if (kind === "objective") {
@@ -2440,7 +2906,7 @@ function blankEntity(kind, state) {
   }
 
   if (kind === "sprint") {
-    const year = Number(String(state.ui.selectedDate || formatISODate(new Date())).slice(0, 4));
+  const year = Number(String(state.ui.selectedDate || getCurrentISODate()).slice(0, 4));
     return normalizeSprintPayload({ title: "Novo sprint", slot: 1 }, null, 0, year);
   }
 
@@ -2516,6 +2982,9 @@ export function buildAppModel(inputState, referenceDate = new Date()) {
   const state = prepareState(cloneValue(inputState));
   const today = formatISODate(referenceDate);
   const selectedDate = state.ui.selectedDate || today;
+  const projectTasks = state.tasks
+    .filter((task) => !isTemplateTask(task))
+    .map((task) => enrichTask(task, state, selectedDate));
   const openTasks = applyFrogs(
     state.tasks.filter(isOpenTask).map((task) => enrichTask(task, state, selectedDate)),
     selectedDate,
@@ -2535,6 +3004,7 @@ export function buildAppModel(inputState, referenceDate = new Date()) {
   const todayChecklist = buildTodayChecklistModel(state, filteredTasks, selectedDate, weekData);
   const checklist = buildChecklistModel(state, filteredTasks, completedTasks, selectedDate, weekData);
   const agenda = buildAgendaModel(state, filteredTasks, weekData, selectedDate);
+  const projectsView = buildProjectsWorkspaceModel(state, projectTasks);
   const floatingAlert = selectedDay.tasks.find(
     (task) => task.critical && !task.riskAccepted && (task.manualDecision || selectedDay.lowCapacity || task.location === "alert"),
   ) || null;
@@ -2554,7 +3024,8 @@ export function buildAppModel(inputState, referenceDate = new Date()) {
     organize,
     inbox,
     areas: buildAreaSummaries(state, filteredTasks),
-    projects: buildProjectSummaries(state, filteredTasks),
+    projects: projectsView.summaries,
+    projectsView,
     planning: buildPlanningModel(state, filteredTasks),
     agenda,
     todayChecklist,
@@ -2565,6 +3036,7 @@ export function buildAppModel(inputState, referenceDate = new Date()) {
     options: {
       areas: state.areas,
       projects: state.projects,
+      projectTemplates: PROJECT_TEMPLATES,
       objectives: state.objectives,
       sprints: state.sprints,
       dayTypes: state.dayTypes,
@@ -2649,13 +3121,30 @@ function normalizeAreaPayload(payload = {}, existing = null) {
 }
 
 function normalizeProjectPayload(payload = {}, existing = null) {
+  const template = getProjectTemplate(payload.templateId || existing?.templateId || "work");
   return {
     id: payload.id || existing?.id || makeId("project"),
     name: String(payload.name || existing?.name || "Novo projeto").trim(),
-    areaId: payload.areaId || existing?.areaId || "area-work",
+    areaId: payload.areaId || existing?.areaId || template.areaId || "area-work",
+    templateId: payload.templateId || existing?.templateId || template.id,
+    projectType: payload.projectType || existing?.projectType || template.projectType || template.label,
     status: payload.status || existing?.status || "active",
-    color: payload.color || existing?.color || "#8b6c50",
-    summary: payload.summary || existing?.summary || "",
+    dueDate: payload.dueDate || existing?.dueDate || "",
+    priority: payload.priority || existing?.priority || "medium",
+    sprintId: payload.sprintId || existing?.sprintId || "",
+    color: payload.color || existing?.color || template.color || "#8b6c50",
+    summary: payload.summary || existing?.summary || template.summary || "",
+    description: payload.description || existing?.description || template.description || "",
+    objective: payload.objective || existing?.objective || template.objective || "",
+    infoLinks: parseProjectLinkEntries(payload.infoLinks, existing?.infoLinks || template.infoLinks || []),
+    referenceEntries: parseProjectLinkEntries(payload.referenceEntries, existing?.referenceEntries || template.referenceEntries || []),
+    observationLines: parseLineList(payload.observationLines, existing?.observationLines || template.observationLines || []),
+    decisionLines: parseLineList(payload.decisionLines, existing?.decisionLines || template.decisionLines || []),
+    freeNotes: payload.freeNotes || existing?.freeNotes || "",
+    okrs: parseProjectOkrs(payload.okrs, existing?.okrs || template.okrs || []),
+    backlogItems: parseProjectBacklogItems(payload.backlogItems, existing?.backlogItems || template.backlogItems || []),
+    baseActivities: parseProjectBaseActivities(payload.baseActivities, existing?.baseActivities || template.baseActivities || []),
+    actionPlan: parseProjectActionPlan(payload.actionPlan, existing?.actionPlan || template.actionPlan || []),
   };
 }
 
@@ -2691,7 +3180,7 @@ function normalizeBlockPayload(payload = {}, existing = null) {
     title: String(payload.title || existing?.title || "Novo bloco").trim(),
     areaId: payload.areaId || existing?.areaId || "",
     projectId: payload.projectId || existing?.projectId || "",
-    date: payload.date || existing?.date || formatISODate(new Date()),
+    date: payload.date || existing?.date || getCurrentISODate(),
     startTime: payload.startTime || existing?.startTime || "09:00",
     endTime: payload.endTime || existing?.endTime || "10:00",
     period: payload.period || existing?.period || "afternoon",
@@ -2719,7 +3208,7 @@ function normalizeRoutinePayload(payload = {}, existing = null) {
 function normalizeHealthWeightPayload(payload = {}, existing = null) {
   return {
     id: payload.id || existing?.id || makeId("weight"),
-    date: payload.date || existing?.date || formatISODate(new Date()),
+    date: payload.date || existing?.date || getCurrentISODate(),
     weight: toNumber(payload.weight, existing?.weight || 0),
     note: payload.note || existing?.note || "",
   };
@@ -2728,7 +3217,7 @@ function normalizeHealthWeightPayload(payload = {}, existing = null) {
 function normalizeHealthMeasurePayload(payload = {}, existing = null) {
   return {
     id: payload.id || existing?.id || makeId("measure"),
-    date: payload.date || existing?.date || formatISODate(new Date()),
+    date: payload.date || existing?.date || getCurrentISODate(),
     waist: toNumber(payload.waist, existing?.waist || 0),
     chest: toNumber(payload.chest, existing?.chest || 0),
     hip: toNumber(payload.hip, existing?.hip || 0),
@@ -2750,7 +3239,7 @@ function normalizeHealthCarePayload(payload = {}, existing = null) {
 function normalizeHealthWorkoutPayload(payload = {}, existing = null) {
   return {
     id: payload.id || existing?.id || makeId("workout"),
-    date: payload.date || existing?.date || formatISODate(new Date()),
+    date: payload.date || existing?.date || getCurrentISODate(),
     title: String(payload.title || existing?.title || "Novo treino").trim(),
     type: payload.type || existing?.type || "casa",
     duration: toNumber(payload.duration, existing?.duration || 30),
@@ -2772,10 +3261,10 @@ function normalizeDietMealPayload(payload = {}, existing = null) {
 }
 
 function normalizeDayOverridePayload(state, payload = {}, existing = null) {
-  const typeId = payload.typeId || existing?.typeId || getDefaultDayTypeId(state, payload.date || existing?.date || formatISODate(new Date()));
+  const typeId = payload.typeId || existing?.typeId || getDefaultDayTypeId(state, payload.date || existing?.date || getCurrentISODate());
   return {
     id: payload.id || existing?.id || makeId("override"),
-    date: payload.date || existing?.date || formatISODate(new Date()),
+    date: payload.date || existing?.date || getCurrentISODate(),
     typeId,
     periods: {
       ...defaultPeriodsForType(state, typeId),
@@ -3172,7 +3661,7 @@ export function saveHealthWeight(state, payload) {
   const nextState = cloneState(state);
   const entry = {
     id: payload.id || makeId("weight"),
-    date: payload.date || formatISODate(new Date()),
+    date: payload.date || getCurrentISODate(),
     weight: toNumber(payload.weight, 0),
     note: payload.note || "",
   };
@@ -3186,7 +3675,7 @@ export function saveHealthMeasure(state, payload) {
   const nextState = cloneState(state);
   const entry = {
     id: payload.id || makeId("measure"),
-    date: payload.date || formatISODate(new Date()),
+    date: payload.date || getCurrentISODate(),
     waist: toNumber(payload.waist, 0),
     chest: toNumber(payload.chest, 0),
     hip: toNumber(payload.hip, 0),
@@ -3218,7 +3707,7 @@ export function saveHealthWorkout(state, payload) {
   const nextState = cloneState(state);
   const entry = {
     id: payload.id || makeId("workout"),
-    date: payload.date || formatISODate(new Date()),
+    date: payload.date || getCurrentISODate(),
     title: String(payload.title || "Novo treino").trim(),
     type: payload.type || "casa",
     duration: toNumber(payload.duration, 30),
@@ -3249,7 +3738,7 @@ export function saveDietMeal(state, payload) {
   return nextState;
 }
 
-export function captureInboxTask(state, transcript, referenceDate = formatISODate(new Date())) {
+export function captureInboxTask(state, transcript, referenceDate = getCurrentISODate()) {
   const nextState = cloneState(state);
   const draft = analyzeCaptureText(nextState, transcript, referenceDate);
   const basePayload = {
@@ -3267,8 +3756,8 @@ export function captureInboxTask(state, transcript, referenceDate = formatISODat
     nextAction: draft.checklist?.[0] || "",
     notes: draft.transcript ? `Captura rapida: ${draft.transcript}` : "",
     source: "capture",
-    location: draft.scheduledDate ? "scheduled" : "captured",
-    status: "todo",
+    location: "inbox",
+    status: "inbox",
   };
   const currentSprint = nextState.sprints.find((sprint) => sprint.status === "current") || null;
   const previewTask = normalizeTaskPayload(nextState, basePayload, null);
@@ -3279,7 +3768,7 @@ export function captureInboxTask(state, transcript, referenceDate = formatISODat
   }, null);
 
   nextState.tasks.unshift(task);
-  pushHistory(nextState, "task-captured", `Captura simples interpretada: ${task.title}`, {
+  pushHistory(nextState, "task-captured", `Captura salva na Inbox: ${task.title}`, {
     areaId: task.areaId,
     projectId: task.projectId,
     sprintId: task.sprintId,
@@ -3290,8 +3779,8 @@ export function captureInboxTask(state, transcript, referenceDate = formatISODat
     task,
     draft,
     message: sprintFit.matched
-      ? "Captura interpretada e enviada para Organizar com apoio do sprint atual."
-      : "Captura interpretada e enviada para Organizar.",
+      ? "Captura salva na Inbox com leitura do sprint atual."
+      : "Captura salva na Inbox.",
   };
 }
 
@@ -3421,66 +3910,25 @@ function saveVoiceInterpretationHistory(state, meta = {}) {
   state.settings.voiceAssistant.history = state.settings.voiceAssistant.history.slice(0, 60);
 }
 
-function addScheduledVoiceTask(state, payload = {}) {
-  const task = normalizeTaskPayload(state, {
-    ...payload,
-    location: "scheduled",
-    status: "todo",
-    source: "voice",
-  }, null);
-  state.tasks.unshift(task);
-  pushHistory(state, "voice-schedule", `Captura por voz salva na agenda: ${task.title}`);
-}
-
-function addDelegatedVoiceTask(state, payload = {}) {
-  const task = normalizeTaskPayload(state, {
-    ...payload,
-    location: "delegated",
-    status: "delegated",
-    finalBucket: "delegate",
-    gtdDecision: "Delegar",
-    priorityMode: "manual",
-    manualDecision: false,
-    source: "voice",
-  }, null);
-  state.tasks.unshift(task);
-  pushHistory(state, "voice-delegate", `Captura por voz marcada para delegar: ${task.title}`);
-}
-
 export function confirmVoiceCapture(state, payload = {}, meta = {}) {
   const nextState = cloneState(state);
   const transcript = String(payload.transcript || meta.transcript || "").trim();
+
+  if (!transcript) {
+    return {
+      nextState,
+      message: "Fale ou digite algo antes de salvar na Inbox.",
+    };
+  }
+
+  const understood = meta.understood && Object.keys(meta.understood).length
+    ? meta.understood
+    : analyzeCaptureText(nextState, transcript, nextState.ui.selectedDate || getCurrentISODate());
   const corrected = {
-    ...payload,
+    ...understood,
+    title: transcript,
     transcript,
-    checklist: parseChecklist(payload.checklist, []),
-    notes: String(payload.notes || ""),
-    estimatedMinutes: toNumber(payload.estimatedMinutes, 30),
-    urgency: toNumber(payload.urgency, 3),
-    priority: payload.priority || "medium",
-    scheduledDate: payload.scheduledDate || "",
-    dueDate: payload.dueDate || "",
-    scheduledPeriod: payload.scheduledPeriod || "",
-    intent: payload.intent || "create-task",
-    destination: payload.destination || "inbox",
-    healthWeight: toNumber(payload.healthWeight, 0),
-    waist: toNumber(payload.waist, 0),
-    chest: toNumber(payload.chest, 0),
-    hip: toNumber(payload.hip, 0),
-    arm: toNumber(payload.arm, 0),
-    thigh: toNumber(payload.thigh, 0),
   };
-  const removedIntentMap = {
-    "register-weight": "create-task",
-    "register-measure": "create-task",
-    "create-habit": "create-task",
-    "add-checklist-item": "create-task",
-  };
-  corrected.intent = removedIntentMap[corrected.intent] || corrected.intent;
-  corrected.destination = ["health", "routine"].includes(corrected.destination) ? "inbox" : corrected.destination;
-  corrected.areaId = ["area-health", "area-routine"].includes(corrected.areaId) ? "area-personal" : corrected.areaId;
-  corrected.context = corrected.context === "health" ? "flex" : corrected.context;
-  const understood = meta.understood || {};
   const corrections = diffVoiceInterpretation(understood, corrected);
 
   saveVoiceInterpretationHistory(nextState, {
@@ -3492,79 +3940,29 @@ export function confirmVoiceCapture(state, payload = {}, meta = {}) {
   });
   saveVoiceLearning(nextState, transcript, corrected, corrections);
 
-  const notesWithTranscript = [corrected.notes, transcript ? `Captura por voz: ${transcript}` : ""]
+  const notesWithTranscript = [corrected.notes || "", transcript ? `Captura por voz: ${transcript}` : ""]
     .filter(Boolean)
     .join("\n");
-
-  if (corrected.intent === "change-day-type") {
-    const targetDate = corrected.scheduledDate || corrected.dueDate || nextState.ui.selectedDate;
-    const targetType = corrected.suggestedDayTypeId || "normal";
-    if (corrected.scheduledPeriod) {
-      const result = setDayPeriodType(nextState, targetDate, corrected.scheduledPeriod, targetType);
-      return { nextState: result.nextState, message: `Periodo do dia ajustado por voz: ${result.movedCount} movidas, ${result.alertCount} alertas.` };
-    }
-    const result = setDayType(nextState, targetDate, targetType);
-    return { nextState: result.nextState, message: `Tipo de dia ajustado por voz: ${result.movedCount} movidas, ${result.alertCount} alertas.` };
-  }
-
-  if (corrected.intent === "schedule" || corrected.intent === "reschedule" || corrected.destination === "agenda") {
-    addScheduledVoiceTask(nextState, {
-      title: corrected.title,
-      areaId: corrected.areaId,
-      projectId: corrected.projectId,
-      context: corrected.context,
-      scheduledDate: corrected.scheduledDate || corrected.dueDate || nextState.ui.selectedDate,
-      dueDate: corrected.dueDate || corrected.scheduledDate || nextState.ui.selectedDate,
-      scheduledPeriod: corrected.scheduledPeriod || "afternoon",
-      estimatedMinutes: corrected.estimatedMinutes,
-      priority: corrected.priority,
-      urgency: corrected.urgency,
-      subtasks: corrected.checklist,
-      notes: notesWithTranscript,
-    });
-    return { nextState, message: "Agendamento criado a partir da voz." };
-  }
-
-  if (corrected.intent === "delegate") {
-    addDelegatedVoiceTask(nextState, {
-      title: corrected.title,
-      areaId: corrected.areaId,
-      projectId: corrected.projectId,
-      context: corrected.context,
-      dueDate: corrected.dueDate || corrected.scheduledDate || "",
-      estimatedMinutes: corrected.estimatedMinutes,
-      priority: corrected.priority,
-      urgency: corrected.urgency,
-      subtasks: corrected.checklist,
-      notes: notesWithTranscript,
-      delegable: true,
-    });
-    return { nextState, message: "Tarefa marcada para delegacao a partir da voz." };
-  }
-
-  const destination = corrected.destination === "project" ? "project" : "inbox";
   const savedState = addInboxTask(nextState, {
-    title: corrected.title,
-    areaId: corrected.areaId,
-    projectId: corrected.projectId,
-    dueDate: corrected.dueDate || corrected.scheduledDate || "",
-    estimatedMinutes: corrected.estimatedMinutes,
-    context: corrected.context,
-    checklist: corrected.checklist,
+    title: corrected.title || transcript,
+    areaId: corrected.areaId || nextState.areas[0]?.id || "",
+    projectId: corrected.projectId || "",
+    dueDate: corrected.dueDate || "",
+    estimatedMinutes: corrected.estimatedMinutes || 30,
+    context: corrected.context || "flex",
+    checklist: corrected.checklist || [],
     notes: notesWithTranscript,
-    priority: corrected.priority,
-    urgency: corrected.urgency,
+    priority: corrected.priority || "medium",
+    urgency: corrected.urgency || 3,
     source: "voice",
   });
   return {
     nextState: savedState,
-    message: destination === "project"
-      ? "Captura por voz enviada para o fluxo do projeto."
-      : "Captura por voz enviada para a Inbox.",
+    message: "Captura por voz salva na Inbox.",
   };
 }
 
-export function applyTaskAction(state, taskId, action, _meta = {}, referenceDate = formatISODate(new Date())) {
+export function applyTaskAction(state, taskId, action, _meta = {}, referenceDate = getCurrentISODate()) {
   const nextState = cloneState(state);
   const task = getTaskById(nextState, taskId);
   if (!task) return nextState;
@@ -3715,7 +4113,7 @@ export function closeEditor(state) {
 
 export function saveEntity(state, kind, payload) {
   const nextState = cloneState(state);
-  const referenceYear = Number(String(nextState.ui.selectedDate || formatISODate(new Date())).slice(0, 4));
+  const referenceYear = Number(String(nextState.ui.selectedDate || getCurrentISODate()).slice(0, 4));
 
   if (kind === "task") {
     const existing = payload.id ? getTaskById(nextState, payload.id) : null;
@@ -3736,6 +4134,7 @@ export function saveEntity(state, kind, payload) {
     const project = normalizeProjectPayload(payload, existing);
     nextState.projects = nextState.projects.filter((entry) => entry.id !== project.id);
     nextState.projects.push(project);
+    nextState.ui.selectedProjectId = project.id;
   }
 
   if (kind === "objective") {
@@ -3842,6 +4241,9 @@ export function deleteEntity(state, kind, id) {
   if (kind === "routine") removeRoutineItem(nextState, id);
   if (kind === "day-override") nextState.dayOverrides = nextState.dayOverrides.filter((entry) => entry.id !== id);
   nextState.ui.editor = { kind: "", id: "" };
+  if (kind === "project" && nextState.ui.selectedProjectId === id) {
+    nextState.ui.selectedProjectId = nextState.projects[0]?.id || "";
+  }
   pushHistory(nextState, "delete-entity", `Item removido: ${kind}`);
   return nextState;
 }
@@ -3855,6 +4257,14 @@ export function duplicateEntity(state, kind, id) {
   if (kind === "block") {
     const existing = nextState.blocks.find((entry) => entry.id === id);
     if (existing) nextState.blocks.push(normalizeBlockPayload({ ...existing, id: "", title: `${existing.title} (copia)` }, null));
+  }
+  if (kind === "project") {
+    const existing = nextState.projects.find((entry) => entry.id === id);
+    if (existing) {
+      const project = normalizeProjectPayload({ ...existing, id: "", name: `${existing.name} (copia)` }, null);
+      nextState.projects.push(project);
+      nextState.ui.selectedProjectId = project.id;
+    }
   }
   if (kind === "health-care") {
     const existing = nextState.health.careItems.find((entry) => entry.id === id);
@@ -3875,7 +4285,7 @@ export function duplicateEntity(state, kind, id) {
   if (kind === "sprint") {
     const existing = nextState.sprints.find((entry) => entry.id === id);
     if (existing) {
-      const year = Number(String(nextState.ui.selectedDate || formatISODate(new Date())).slice(0, 4));
+  const year = Number(String(nextState.ui.selectedDate || getCurrentISODate()).slice(0, 4));
       nextState.sprints.push(normalizeSprintPayload({ ...existing, id: "", title: `${existing.title} (copia)`, status: "planned" }, null, inferSprintSlot(existing) - 1, year));
       nextState.sprints = normalizeSprints(nextState.sprints, year);
     }
@@ -3918,7 +4328,7 @@ export function setDayPeriodType(state, date, periodId, typeId) {
   return { nextState, ...result };
 }
 
-export function replanWeek(state, referenceDate = formatISODate(new Date())) {
+export function replanWeek(state, referenceDate = getCurrentISODate()) {
   const nextState = cloneState(state);
   let movedCount = 0;
   let alertCount = 0;
@@ -3972,8 +4382,155 @@ export function saveSettings(state, payload) {
     areaAliases: parseVoiceAliasLines(payload.voiceAreaAliases, nextState.settings.voiceAssistant.areaAliases),
     frequentAssociations: parseVoiceAssociationLines(payload.voiceAssociations, nextState.settings.voiceAssistant.frequentAssociations),
   };
+  nextState.settings.cloudSync = {
+    ...nextState.settings.cloudSync,
+    enabled: toBoolean(payload.syncEnabled, nextState.settings.cloudSync.enabled),
+    provider: payload.syncProvider || nextState.settings.cloudSync.provider || "supabase",
+    projectUrl: String(payload.syncProjectUrl || nextState.settings.cloudSync.projectUrl || "").trim(),
+    anonKey: String(payload.syncAnonKey || nextState.settings.cloudSync.anonKey || "").trim(),
+    tableName: String(payload.syncTableName || nextState.settings.cloudSync.tableName || "life_os_snapshots").trim() || "life_os_snapshots",
+    workspaceKey: String(payload.syncWorkspaceKey || nextState.settings.cloudSync.workspaceKey || "").trim(),
+    pollIntervalSeconds: toNumber(payload.syncPollIntervalSeconds, nextState.settings.cloudSync.pollIntervalSeconds || 20),
+    lastError: nextState.settings.cloudSync.lastError || "",
+    lastSyncedAt: nextState.settings.cloudSync.lastSyncedAt || "",
+    lastPulledAt: nextState.settings.cloudSync.lastPulledAt || "",
+    deviceId: nextState.settings.cloudSync.deviceId || "",
+  };
   pushHistory(nextState, "settings", "Configuracoes atualizadas.");
   return nextState;
+}
+
+export function setSelectedProject(state, projectId) {
+  const nextState = cloneState(state);
+  if (!nextState.projects.some((project) => project.id === projectId)) {
+    return nextState;
+  }
+  nextState.ui.selectedProjectId = projectId;
+  return nextState;
+}
+
+export function createProjectFromTemplate(state, templateId) {
+  const nextState = cloneState(state);
+  const template = getProjectTemplate(templateId);
+  const project = normalizeProjectPayload({
+    name: template.label,
+    templateId: template.id,
+    areaId: template.areaId,
+    projectType: template.projectType,
+    color: template.color,
+    summary: template.summary,
+    description: template.description,
+    objective: template.objective,
+    infoLinks: template.infoLinks,
+    referenceEntries: template.referenceEntries,
+    observationLines: template.observationLines,
+    decisionLines: template.decisionLines,
+    okrs: template.okrs,
+    backlogItems: template.backlogItems,
+    baseActivities: template.baseActivities,
+    actionPlan: template.actionPlan,
+    status: "active",
+    priority: "medium",
+    sprintId: "",
+  }, null);
+
+  nextState.projects.push(project);
+  nextState.ui.selectedProjectId = project.id;
+  pushHistory(nextState, "project-template", `Projeto criado a partir do template ${template.label}.`);
+  return nextState;
+}
+
+function findProjectSourceEntry(project, sourceType, entryId) {
+  const sourceMap = {
+    backlog: project.backlogItems || [],
+    base: project.baseActivities || [],
+    action: project.actionPlan || [],
+    okr: project.okrs || [],
+  };
+
+  const entries = sourceMap[sourceType] || [];
+  return entries.find((entry) => entry.id === entryId) || null;
+}
+
+export function generateTaskFromProjectSource(state, projectId, sourceType, entryId) {
+  const nextState = cloneState(state);
+  const project = nextState.projects.find((entry) => entry.id === projectId);
+  if (!project) {
+    return { nextState, message: "Projeto nao encontrado." };
+  }
+
+  const sourceEntry = findProjectSourceEntry(project, sourceType, entryId);
+  if (!sourceEntry) {
+    return { nextState, message: "Item do projeto nao encontrado." };
+  }
+
+  const payloadBySource = {
+    backlog: {
+      title: sourceEntry.title,
+      subtasks: [],
+      nextAction: sourceEntry.notes || "",
+      notes: `Gerada do backlog do projeto ${project.name}.${sourceEntry.notes ? ` ${sourceEntry.notes}` : ""}`.trim(),
+      finalBucket: "backlog",
+      priority: project.priority || "medium",
+      estimatedMinutes: 20,
+      context: "planning",
+    },
+    base: {
+      title: sourceEntry.title,
+      subtasks: sourceEntry.checklist || [],
+      nextAction: sourceEntry.checklist?.[0] || "",
+      notes: `Gerada das atividades base do projeto ${project.name}.`,
+      finalBucket: sourceEntry.bucket || "priority",
+      priority: sourceEntry.priority || project.priority || "medium",
+      estimatedMinutes: sourceEntry.estimatedMinutes || 30,
+      context: sourceEntry.context || "flex",
+    },
+    action: {
+      title: sourceEntry.title,
+      subtasks: sourceEntry.checklist || [],
+      nextAction: sourceEntry.nextAction || sourceEntry.checklist?.[0] || "",
+      notes: `Gerada do plano de acao do projeto ${project.name}.`,
+      finalBucket: sourceEntry.bucket || "priority",
+      priority: project.priority || "medium",
+      estimatedMinutes: 35,
+      context: "planning",
+    },
+    okr: {
+      title: sourceEntry.title,
+      subtasks: sourceEntry.keyResults || [],
+      nextAction: sourceEntry.keyResults?.[0] || "",
+      notes: `Gerada a partir do OKR do projeto ${project.name}.`,
+      finalBucket: "priority",
+      priority: project.priority || "high",
+      estimatedMinutes: 30,
+      context: "planning",
+    },
+  };
+
+  const taskSeed = payloadBySource[sourceType];
+  if (!taskSeed) {
+    return { nextState, message: "Origem do projeto nao suportada." };
+  }
+
+  const task = normalizeTaskPayload(nextState, {
+    ...taskSeed,
+    areaId: project.areaId,
+    projectId: project.id,
+    sprintId: project.sprintId || "",
+    status: "todo",
+    location: "captured",
+    source: "project",
+    gtdDecision: "Processar",
+    priorityMode: "auto",
+  }, null);
+
+  nextState.tasks.unshift(task);
+  pushHistory(nextState, "project-task", `Tarefa gerada do projeto ${project.name}: ${task.title}.`);
+  return {
+    nextState,
+    task,
+    message: "Tarefa gerada do projeto e enviada para Organizar.",
+  };
 }
 
 export function saveCurrentLayoutAsDefault(state) {
