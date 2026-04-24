@@ -2484,3 +2484,442 @@ button {
   }
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  overflow-x: hidden;
+}
+
+#app,
+.app-shell,
+.workspace-root,
+.workspace-main,
+.page-shell,
+.workspace-content-column {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.app-shell {
+  --shell-padding: 1rem;
+  --section-gap: 0.9rem;
+  --surface-padding: 0.9rem;
+  --surface-radius: 18px;
+  --surface-radius-sm: 14px;
+  --title-xl: 1.45rem;
+  --title-lg: 1.05rem;
+  --title-md: 0.96rem;
+  --body-size: 0.92rem;
+  font-size: 15px;
+  overflow-x: hidden;
+}
+
+.app-shell.density-compact {
+  --shell-padding: 0.85rem;
+  --section-gap: 0.72rem;
+  --surface-padding: 0.76rem;
+  --surface-radius: 16px;
+  --surface-radius-sm: 12px;
+  --title-xl: 1.28rem;
+  --title-lg: 0.98rem;
+  --title-md: 0.9rem;
+  --body-size: 0.87rem;
+  font-size: 14px;
+}
+
+.app-shell.density-comfortable {
+  --shell-padding: 1rem;
+  --section-gap: 0.9rem;
+  --surface-padding: 0.92rem;
+  --surface-radius: 18px;
+  --surface-radius-sm: 14px;
+  --title-xl: 1.45rem;
+  --title-lg: 1.05rem;
+  --title-md: 0.96rem;
+  --body-size: 0.92rem;
+  font-size: 15px;
+}
+
+.app-shell.density-ample {
+  --shell-padding: 1.2rem;
+  --section-gap: 1.05rem;
+  --surface-padding: 1.05rem;
+  --surface-radius: 20px;
+  --surface-radius-sm: 15px;
+  --title-xl: 1.56rem;
+  --title-lg: 1.12rem;
+  --title-md: 1rem;
+  --body-size: 0.96rem;
+  font-size: 16px;
+}
+
+.workspace-root {
+  max-width: min(1580px, 100vw);
+  margin: 0 auto;
+  padding: var(--shell-padding) var(--shell-padding) calc(var(--shell-padding) * 2.2);
+}
+
+.workspace-desktop-grid,
+.workspace-sidebar-column {
+  display: none;
+}
+
+.workspace-content-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--section-gap);
+}
+
+.workspace-nav-backdrop {
+  position: fixed;
+  inset: 0;
+  border: 0;
+  background: rgba(21, 31, 24, 0.22);
+  backdrop-filter: blur(2px);
+  z-index: 34;
+}
+
+.workspace-sidebar.desktop-drawer,
+.workspace-sidebar.mobile-drawer {
+  position: fixed;
+  top: var(--shell-padding);
+  left: var(--shell-padding);
+  bottom: var(--shell-padding);
+  width: min(320px, calc(100vw - (var(--shell-padding) * 2)));
+  max-width: calc(100vw - (var(--shell-padding) * 2));
+  padding: 0.95rem;
+  background: rgba(247, 251, 247, 0.96);
+  border: 1px solid rgba(55, 81, 63, 0.12);
+  border-radius: 22px;
+  box-shadow: 0 22px 48px rgba(24, 41, 30, 0.14);
+  backdrop-filter: blur(18px);
+  overflow-y: auto;
+  transform: translateX(calc(-100% - 1.2rem));
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.22s ease, opacity 0.22s ease;
+  z-index: 40;
+}
+
+.workspace-sidebar.desktop-drawer.open,
+.workspace-sidebar.mobile-drawer.open {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.brand-block,
+.nav-group,
+.sidebar-footer,
+.workspace-header-card,
+.workspace-page-card,
+.workspace-week-card,
+.workspace-controls-card,
+.mobile-topbar-card,
+.panel-card,
+.metric-card,
+.day-chip,
+.board-column,
+.crm-stage-column,
+.modal-card,
+.floating-alert-card,
+.task-card,
+.crm-lead-card,
+.crm-followup-item,
+.stage-card,
+.stage-summary-card,
+.period-card,
+.calendar-day-column,
+.layout-summary-card,
+.checklist-rail-card {
+  border-radius: var(--surface-radius);
+}
+
+.workspace-header-card,
+.workspace-page-card,
+.workspace-week-card,
+.workspace-controls-card,
+.panel-card,
+.metric-card,
+.board-column,
+.calendar-day-column {
+  padding: var(--surface-padding);
+}
+
+.workspace-context-stack,
+.page-shell,
+.stack-list,
+.compact-stack,
+.timeline-list,
+.calendar-events,
+.stage-mini-list,
+.layout-grid {
+  gap: var(--section-gap);
+}
+
+.today-hero {
+  padding: var(--surface-padding);
+  margin-bottom: var(--section-gap);
+  border-radius: var(--surface-radius);
+}
+
+.brand-block h1 {
+  font-size: var(--title-lg);
+}
+
+.workspace-header-card h2,
+.today-hero h3 {
+  font-size: var(--title-xl);
+}
+
+.panel-head h3,
+.project-hero-card h3,
+.checklist-header h3,
+.workspace-week-card h3 {
+  font-size: var(--title-lg);
+}
+
+.brand-block p,
+.workspace-header-card p,
+.muted-copy,
+.panel-head p,
+.task-card p,
+.crm-lead-card p,
+.crm-followup-item p,
+.metric-card p,
+.timeline-item small,
+.calendar-event small,
+.load-cell small,
+.goal-row p,
+.summary-row p,
+.reading-card p,
+.field span,
+.field input,
+.field select,
+.field textarea,
+.inline-select {
+  font-size: var(--body-size);
+}
+
+.metric-card strong {
+  font-size: 1.48rem;
+}
+
+.ghost-button,
+.secondary-button,
+.primary-button,
+.chip-button,
+.tiny-button,
+.field input,
+.field select,
+.field textarea,
+.inline-select {
+  padding: 0.6rem 0.78rem;
+}
+
+.ghost-button.small,
+.tiny-button {
+  padding: 0.4rem 0.58rem;
+}
+
+.week-rail,
+.agenda-kanban-grid,
+.organize-board,
+.week-calendar-grid,
+.crm-stage-board,
+.checklist-mobile-rail {
+  overflow-x: visible !important;
+  max-width: 100%;
+}
+
+.week-rail {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.week-calendar-grid {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.organize-board {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.board-column,
+.calendar-day-column,
+.agenda-day-stack,
+.layout-card,
+.layout-card > .panel-card,
+.project-rich-list,
+.project-section-grid,
+.project-template-grid,
+.project-selector-list,
+.checklist-main,
+.checklist-groups {
+  min-width: 0;
+}
+
+.agenda-kanban-grid {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.72rem;
+}
+
+.calendar-day-column {
+  padding: 0.82rem;
+}
+
+.agenda-kanban-task,
+.task-card,
+.stage-card,
+.period-card,
+.load-cell,
+.mini-period,
+.timeline-item,
+.calendar-event,
+.callout,
+.reading-card,
+.summary-row,
+.goal-row,
+.check-row {
+  padding: 0.78rem;
+  border-radius: var(--surface-radius-sm);
+}
+
+.layout-grid {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: start;
+}
+
+.layout-card.editable {
+  padding: 0.5rem;
+}
+
+.layout-edit-bar {
+  gap: 0.55rem;
+  padding: 0.58rem 0.7rem;
+  border-radius: var(--surface-radius-sm);
+}
+
+.layout-grid.layout-grid-freeform {
+  position: relative;
+  display: block;
+  min-height: var(--layout-canvas-height, 640px);
+  overflow: hidden;
+}
+
+.layout-grid.layout-grid-freeform .layout-card.freeform {
+  position: absolute;
+  margin: 0;
+}
+
+.layout-grid.layout-grid-freeform .layout-card.freeform > .panel-card {
+  min-height: 100%;
+}
+
+.layout-grid.layout-grid-freeform .layout-card.freeform.editable {
+  cursor: default;
+}
+
+.checklist-mobile-rail {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: row;
+}
+
+.field-grid.two,
+.field-grid.three,
+.field-grid.four,
+.field-grid.five,
+.metric-grid.four,
+.page-grid.two,
+.filter-grid,
+.period-editor-grid,
+.period-grid,
+.stage-grid {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.page-grid.two > *,
+.field-grid.two > *,
+.field-grid.three > *,
+.field-grid.four > *,
+.field-grid.five > *,
+.metric-grid.four > * {
+  min-width: 0;
+}
+
+.settings-layout-form,
+.project-workspace-form {
+  gap: var(--section-gap);
+}
+
+.settings-submit-row,
+.project-form-actions {
+  margin-top: 0.4rem;
+}
+
+@media (max-width: 1380px) {
+  .agenda-kanban-grid,
+  .week-rail {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1024px) {
+  .agenda-kanban-grid,
+  .week-rail {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .layout-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .layout-width-compact {
+    grid-column: span 3;
+  }
+
+  .layout-width-medium,
+  .layout-width-full {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 900px) {
+  .workspace-sidebar.desktop-drawer,
+  .workspace-sidebar.mobile-drawer {
+    width: min(300px, calc(100vw - 1.4rem));
+  }
+
+  .agenda-kanban-grid,
+  .week-rail,
+  .checklist-mobile-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .layout-grid.layout-grid-freeform {
+    display: grid;
+    min-height: auto;
+  }
+
+  .layout-grid.layout-grid-freeform .layout-card.freeform {
+    position: static;
+    width: auto !important;
+    min-height: 0 !important;
+    left: auto !important;
+    top: auto !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .agenda-kanban-grid,
+  .week-rail,
+  .checklist-mobile-rail {
+    grid-template-columns: 1fr;
+  }
+}
+

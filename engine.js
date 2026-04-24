@@ -210,6 +210,20 @@ const DEFAULT_LAYOUTS = {
     { id: "checklist", width: "medium", height: "regular", frame: null },
     { id: "alerts", width: "full", height: "regular", frame: null },
   ],
+  checklist: [
+    { id: "views", width: "compact", height: "compact", frame: null },
+    { id: "capture", width: "compact", height: "compact", frame: null },
+    { id: "lists", width: "full", height: "tall", frame: null },
+  ],
+  days: [
+    { id: "snapshot", width: "medium", height: "compact", frame: null },
+    { id: "periods", width: "full", height: "tall", frame: null },
+    { id: "alerts", width: "medium", height: "regular", frame: null },
+  ],
+  inbox: [
+    { id: "capture", width: "medium", height: "compact", frame: null },
+    { id: "recent", width: "medium", height: "regular", frame: null },
+  ],
   prioritize: [
     { id: "pipeline", width: "full", height: "regular", frame: null },
     { id: "frogs", width: "medium", height: "regular", frame: null },
@@ -220,10 +234,50 @@ const DEFAULT_LAYOUTS = {
     { id: "board", width: "full", height: "tall", frame: null },
     { id: "summary", width: "full", height: "compact", frame: null },
   ],
+  areas: [
+    { id: "overview", width: "medium", height: "compact", frame: null },
+    { id: "list", width: "full", height: "tall", frame: null },
+  ],
+  projects: [
+    { id: "selector", width: "compact", height: "tall", frame: null },
+    { id: "overview", width: "medium", height: "regular", frame: null },
+    { id: "info", width: "medium", height: "tall", frame: null },
+    { id: "okrs", width: "medium", height: "regular", frame: null },
+    { id: "backlog", width: "medium", height: "regular", frame: null },
+    { id: "base", width: "medium", height: "regular", frame: null },
+    { id: "action", width: "medium", height: "regular", frame: null },
+    { id: "generated", width: "full", height: "regular", frame: null },
+  ],
+  planning: [
+    { id: "sprints", width: "full", height: "tall", frame: null },
+    { id: "objectives", width: "medium", height: "regular", frame: null },
+    { id: "backlog", width: "medium", height: "regular", frame: null },
+    { id: "templates", width: "medium", height: "regular", frame: null },
+  ],
   agenda: [
     { id: "week", width: "full", height: "tall", frame: null },
     { id: "editor", width: "full", height: "regular", frame: null },
   ],
+  settings: [
+    { id: "layout", width: "full", height: "regular", frame: null },
+    { id: "system", width: "medium", height: "tall", frame: null },
+    { id: "sync", width: "medium", height: "regular", frame: null },
+    { id: "voice", width: "medium", height: "regular", frame: null },
+    { id: "history", width: "full", height: "regular", frame: null },
+  ],
+};
+
+const FREEFORM_CANVAS_WIDTH = 1120;
+const FREEFORM_GAP = 20;
+const FREEFORM_WIDTHS = {
+  compact: 320,
+  medium: 520,
+  full: 1080,
+};
+const FREEFORM_HEIGHTS = {
+  compact: 220,
+  regular: 320,
+  tall: 420,
 };
 
 const PERIODS = [
@@ -334,6 +388,7 @@ function normalizeLayoutEntry(entry, fallback) {
         y: Number.isFinite(source.frame.y) ? source.frame.y : null,
         w: Number.isFinite(source.frame.w) ? source.frame.w : null,
         h: Number.isFinite(source.frame.h) ? source.frame.h : null,
+        z: Number.isFinite(source.frame.z) ? source.frame.z : (Number.isFinite(base?.frame?.z) ? base.frame.z : null),
       }
       : (base.frame ? cloneValue(base.frame) : null),
   };
@@ -369,14 +424,107 @@ function normalizeLayouts(layouts = DEFAULT_LAYOUTS, fallbackLayouts = DEFAULT_L
   return {
     dashboard: normalizeLayoutPage(layouts?.dashboard, fallbackLayouts.dashboard || DEFAULT_LAYOUTS.dashboard),
     today: normalizeLayoutPage(layouts?.today, fallbackLayouts.today || DEFAULT_LAYOUTS.today),
+    checklist: normalizeLayoutPage(layouts?.checklist, fallbackLayouts.checklist || DEFAULT_LAYOUTS.checklist),
+    days: normalizeLayoutPage(layouts?.days, fallbackLayouts.days || DEFAULT_LAYOUTS.days),
+    inbox: normalizeLayoutPage(layouts?.inbox, fallbackLayouts.inbox || DEFAULT_LAYOUTS.inbox),
     prioritize: normalizeLayoutPage(layouts?.prioritize, fallbackLayouts.prioritize || DEFAULT_LAYOUTS.prioritize),
     organize: normalizeLayoutPage(layouts?.organize, fallbackLayouts.organize || DEFAULT_LAYOUTS.organize),
+    areas: normalizeLayoutPage(layouts?.areas, fallbackLayouts.areas || DEFAULT_LAYOUTS.areas),
+    projects: normalizeLayoutPage(layouts?.projects, fallbackLayouts.projects || DEFAULT_LAYOUTS.projects),
+    planning: normalizeLayoutPage(layouts?.planning, fallbackLayouts.planning || DEFAULT_LAYOUTS.planning),
     agenda: normalizeLayoutPage(layouts?.agenda, fallbackLayouts.agenda || DEFAULT_LAYOUTS.agenda),
+    settings: normalizeLayoutPage(layouts?.settings, fallbackLayouts.settings || DEFAULT_LAYOUTS.settings),
   };
 }
 
 function cloneLayouts(layouts = DEFAULT_LAYOUTS) {
   return normalizeLayouts(cloneValue(layouts), DEFAULT_LAYOUTS);
+}
+
+function getFreeformFrameSize(entry) {
+  return {
+    width: FREEFORM_WIDTHS[entry.width] || FREEFORM_WIDTHS.medium,
+    height: FREEFORM_HEIGHTS[entry.height] || FREEFORM_HEIGHTS.regular,
+  };
+}
+
+function hasValidLayoutFrame(frame) {
+  return Boolean(frame)
+    && Number.isFinite(frame.x)
+    && Number.isFinite(frame.y)
+    && Number.isFinite(frame.w)
+    && Number.isFinite(frame.h);
+}
+
+function ensureLayoutFrames(layoutPage = []) {
+  let cursorX = 0;
+  let cursorY = 0;
+  let rowHeight = 0;
+
+  return (layoutPage || []).map((rawEntry, index) => {
+    const entry = normalizeLayoutEntry(rawEntry, rawEntry);
+    const existingFrame = hasValidLayoutFrame(entry.frame)
+      ? {
+        x: Math.max(0, entry.frame.x),
+        y: Math.max(0, entry.frame.y),
+        w: Math.max(220, entry.frame.w),
+        h: Math.max(180, entry.frame.h),
+        z: Number.isFinite(entry.frame.z) ? entry.frame.z : index + 1,
+      }
+      : null;
+
+    if (existingFrame) {
+      return { ...entry, frame: existingFrame };
+    }
+
+    const size = getFreeformFrameSize(entry);
+    if (entry.width === "full") {
+      if (cursorX !== 0) {
+        cursorX = 0;
+        cursorY += rowHeight + FREEFORM_GAP;
+        rowHeight = 0;
+      }
+      const nextEntry = {
+        ...entry,
+        frame: { x: 0, y: cursorY, w: size.width, h: size.height, z: index + 1 },
+      };
+      cursorY += size.height + FREEFORM_GAP;
+      cursorX = 0;
+      rowHeight = 0;
+      return nextEntry;
+    }
+
+    if (cursorX + size.width > FREEFORM_CANVAS_WIDTH) {
+      cursorX = 0;
+      cursorY += rowHeight + FREEFORM_GAP;
+      rowHeight = 0;
+    }
+
+    const nextEntry = {
+      ...entry,
+      frame: { x: cursorX, y: cursorY, w: size.width, h: size.height, z: index + 1 },
+    };
+    cursorX += size.width + FREEFORM_GAP;
+    rowHeight = Math.max(rowHeight, size.height);
+    return nextEntry;
+  });
+}
+
+function ensureLayoutsWithFrames(layouts = DEFAULT_LAYOUTS) {
+  return Object.fromEntries(
+    Object.entries(layouts).map(([page, entries]) => [page, ensureLayoutFrames(entries)]),
+  );
+}
+
+function normalizeVisualDensity(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["compact", "comfortable", "ample"].includes(normalized)) {
+    return normalized;
+  }
+  if (normalized === "calm") {
+    return "compact";
+  }
+  return "compact";
 }
 
 function stepLayoutValue(current, options, direction, fallback) {
@@ -1450,20 +1598,23 @@ function prepareState(state) {
   };
   migrateRemovedModules(state);
 
-  const layoutDefaults = normalizeLayouts(state.settings?.layoutDefaults || DEFAULT_LAYOUTS, DEFAULT_LAYOUTS);
-  const layouts = normalizeLayouts(state.settings?.layouts || layoutDefaults, layoutDefaults);
+  const layoutDefaults = ensureLayoutsWithFrames(normalizeLayouts(state.settings?.layoutDefaults || DEFAULT_LAYOUTS, DEFAULT_LAYOUTS));
+  const layouts = ensureLayoutsWithFrames(normalizeLayouts(state.settings?.layouts || layoutDefaults, layoutDefaults));
 
   state.settings = {
     editMode: Boolean(state.settings?.editMode),
-    visualDensity: state.settings?.visualDensity || "calm",
+    advancedEditMode: toBoolean(state.settings?.advancedEditMode, false),
+    sidebarCollapsed: toBoolean(state.settings?.sidebarCollapsed, true),
+    visualDensity: normalizeVisualDensity(state.settings?.visualDensity || "compact"),
     accentTone: state.settings?.accentTone || "forest",
     layoutDefaults,
     layouts,
-    layoutMode: state.settings?.layoutMode || "flex-grid",
+    layoutMode: toBoolean(state.settings?.advancedEditMode, false) ? "advanced-freeform" : "flex-grid",
     layoutCapabilities: {
       resizeEnabled: toBoolean(state.settings?.layoutCapabilities?.resizeEnabled, true),
       dragEnabled: toBoolean(state.settings?.layoutCapabilities?.dragEnabled, true),
       futureFreeformReady: toBoolean(state.settings?.layoutCapabilities?.futureFreeformReady, true),
+      freeformEnabled: true,
     },
     prioritization: {
       moveProtection: toNumber(state.settings?.prioritization?.moveProtection, 1.18),
@@ -2812,6 +2963,8 @@ function buildPlanningModel(state, tasks) {
 function buildSettingsModel(state) {
   return {
     editMode: state.settings.editMode,
+    advancedEditMode: state.settings.advancedEditMode,
+    sidebarCollapsed: state.settings.sidebarCollapsed,
     visualDensity: state.settings.visualDensity,
     accentTone: state.settings.accentTone,
     reasoningLine: state.settings.reasoningLine,
@@ -4366,9 +4519,16 @@ export function toggleEditMode(state) {
 
 export function saveSettings(state, payload) {
   const nextState = cloneState(state);
-  nextState.settings.visualDensity = payload.visualDensity || nextState.settings.visualDensity;
+  nextState.settings.sidebarCollapsed = toBoolean(payload.sidebarCollapsed, nextState.settings.sidebarCollapsed);
+  nextState.settings.advancedEditMode = toBoolean(payload.advancedEditMode, nextState.settings.advancedEditMode);
+  nextState.settings.visualDensity = normalizeVisualDensity(payload.visualDensity || nextState.settings.visualDensity);
   nextState.settings.accentTone = payload.accentTone || nextState.settings.accentTone;
+  nextState.settings.layoutMode = nextState.settings.advancedEditMode ? "advanced-freeform" : "flex-grid";
   nextState.settings.reasoningLine = payload.reasoningLine || nextState.settings.reasoningLine;
+  nextState.settings.layoutCapabilities = {
+    ...nextState.settings.layoutCapabilities,
+    freeformEnabled: true,
+  };
   nextState.settings.prioritization = {
     moveProtection: toNumber(payload.moveProtection, nextState.settings.prioritization.moveProtection),
     familyProtection: toNumber(payload.familyProtection, nextState.settings.prioritization.familyProtection),
@@ -4533,15 +4693,35 @@ export function generateTaskFromProjectSource(state, projectId, sourceType, entr
   };
 }
 
-export function saveCurrentLayoutAsDefault(state) {
+export function saveCurrentLayoutAsDefault(state, page = "") {
   const nextState = cloneState(state);
+  const targetPage = page && nextState.settings.layouts[page]
+    ? page
+    : (nextState.settings.layouts[nextState.ui.activeSection] ? nextState.ui.activeSection : "");
+
+  if (targetPage) {
+    nextState.settings.layoutDefaults[targetPage] = ensureLayoutFrames(cloneValue(nextState.settings.layouts[targetPage]));
+    pushHistory(nextState, "layout-default", `Layout padrao salvo para ${targetPage}.`);
+    return nextState;
+  }
+
   nextState.settings.layoutDefaults = cloneLayouts(nextState.settings.layouts);
   pushHistory(nextState, "layout-default", "Layout atual salvo como padrao.");
   return nextState;
 }
 
-export function restoreLayoutDefault(state) {
+export function restoreLayoutDefault(state, page = "") {
   const nextState = cloneState(state);
+  const targetPage = page && nextState.settings.layoutDefaults[page]
+    ? page
+    : (nextState.settings.layoutDefaults[nextState.ui.activeSection] ? nextState.ui.activeSection : "");
+
+  if (targetPage) {
+    nextState.settings.layouts[targetPage] = ensureLayoutFrames(cloneValue(nextState.settings.layoutDefaults[targetPage]));
+    pushHistory(nextState, "layout-restore", `Layout padrao restaurado para ${targetPage}.`);
+    return nextState;
+  }
+
   nextState.settings.layouts = cloneLayouts(nextState.settings.layoutDefaults || DEFAULT_LAYOUTS);
   pushHistory(nextState, "layout-restore", "Layout padrao restaurado.");
   return nextState;
@@ -4573,7 +4753,63 @@ export function resizeLayoutCard(state, page, cardId, dimension, direction) {
     entry.height = stepLayoutValue(entry.height, LAYOUT_HEIGHT_ORDER, direction, "regular");
   }
 
+  const nextSize = getFreeformFrameSize(entry);
+  entry.frame = {
+    ...(entry.frame || {}),
+    w: nextSize.width,
+    h: nextSize.height,
+    x: Number.isFinite(entry.frame?.x) ? entry.frame.x : 0,
+    y: Number.isFinite(entry.frame?.y) ? entry.frame.y : 0,
+    z: Number.isFinite(entry.frame?.z) ? entry.frame.z : 1,
+  };
+
   pushHistory(nextState, "layout-resize", `Card redimensionado em ${page}: ${cardId}.`, { dimension, direction });
+  return nextState;
+}
+
+export function nudgeLayoutCard(state, page, cardId, axis, direction) {
+  const nextState = cloneState(state);
+  const entry = nextState.settings.layouts[page]?.find((item) => item.id === cardId);
+  if (!entry) return nextState;
+
+  const nextSize = getFreeformFrameSize(entry);
+  entry.frame = {
+    ...(entry.frame || {}),
+    w: nextSize.width,
+    h: nextSize.height,
+    x: Number.isFinite(entry.frame?.x) ? entry.frame.x : 0,
+    y: Number.isFinite(entry.frame?.y) ? entry.frame.y : 0,
+    z: Number.isFinite(entry.frame?.z) ? entry.frame.z : 1,
+  };
+
+  const delta = direction === "increase" ? 28 : -28;
+  if (axis === "x") {
+    entry.frame.x = Math.max(0, entry.frame.x + delta);
+  }
+  if (axis === "y") {
+    entry.frame.y = Math.max(0, entry.frame.y + delta);
+  }
+
+  pushHistory(nextState, "layout-nudge", `Posicao do bloco ajustada em ${page}: ${cardId}.`, { axis, direction });
+  return nextState;
+}
+
+export function layerLayoutCard(state, page, cardId, direction) {
+  const nextState = cloneState(state);
+  const entry = nextState.settings.layouts[page]?.find((item) => item.id === cardId);
+  if (!entry) return nextState;
+
+  const nextSize = getFreeformFrameSize(entry);
+  entry.frame = {
+    ...(entry.frame || {}),
+    w: nextSize.width,
+    h: nextSize.height,
+    x: Number.isFinite(entry.frame?.x) ? entry.frame.x : 0,
+    y: Number.isFinite(entry.frame?.y) ? entry.frame.y : 0,
+    z: Number.isFinite(entry.frame?.z) ? entry.frame.z : 1,
+  };
+  entry.frame.z = clamp(entry.frame.z + (direction === "increase" ? 1 : -1), 1, 30);
+  pushHistory(nextState, "layout-layer", `Camada do bloco ajustada em ${page}: ${cardId}.`, { direction });
   return nextState;
 }
 

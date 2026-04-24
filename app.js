@@ -16,8 +16,10 @@ import {
   deleteEntity,
   duplicateEntity,
   generateTaskFromProjectSource,
+  layerLayoutCard,
   moveLayoutCard,
   moveTaskToBucket,
+  nudgeLayoutCard,
   openEditor,
   replanWeek,
   reorderAgendaTask,
@@ -93,6 +95,21 @@ const PAGE_META = {
   planning: { kicker: "Estrutura", title: "Planejamento", text: "Sprint, objetivos, backlog e modelos." },
   agenda: { kicker: "Tempo", title: "Agenda", text: "Calendario interno estilo workspace com suporte futuro ao Google." },
   settings: { kicker: "Sistema", title: "Configuracoes", text: "Linha de raciocinio, modo edicao, layout e parametros." },
+};
+
+const PAGE_LABELS = {
+  dashboard: "Dashboard",
+  today: "Hoje",
+  checklist: "Checklist",
+  days: "Dias",
+  inbox: "Entrada",
+  prioritize: "Priorizar",
+  organize: "Organizar",
+  areas: "Areas",
+  projects: "Projetos",
+  planning: "Planejamento",
+  agenda: "Agenda",
+  settings: "Configuracoes",
 };
 
 const LAYOUT_WIDTH_LABELS = {
@@ -304,35 +321,87 @@ function getLayoutItem(model, page, cardId, options = {}) {
   };
 }
 
+function isAdvancedLayoutMode(model, options = {}) {
+  return Boolean(model.settings.advancedEditMode && model.editMode && !options.isMobile);
+}
+
+function getFreeformCardStyle(layoutItem) {
+  const frame = layoutItem?.frame;
+  if (!frame) return "";
+  const x = Number.isFinite(frame.x) ? frame.x : 0;
+  const y = Number.isFinite(frame.y) ? frame.y : 0;
+  const width = Number.isFinite(frame.w) ? frame.w : 360;
+  const height = Number.isFinite(frame.h) ? frame.h : 260;
+  const z = Number.isFinite(frame.z) ? frame.z : 1;
+  return `left:${x}px;top:${y}px;width:${width}px;min-height:${height}px;z-index:${z};`;
+}
+
+function getLayoutCanvasHeight(entries = []) {
+  const maxBottom = entries.reduce((highest, entry) => {
+    const frame = entry?.frame;
+    if (!frame || !Number.isFinite(frame.y) || !Number.isFinite(frame.h)) {
+      return highest;
+    }
+    return Math.max(highest, frame.y + frame.h);
+  }, 0);
+  return Math.max(420, maxBottom + 40);
+}
+
 function layoutCard(page, cardId, title, body, model, options = {}) {
   const layoutItem = getLayoutItem(model, page, cardId, options);
   const widthClass = `layout-width-${layoutItem.width}`;
   const heightClass = `layout-height-${layoutItem.height}`;
+  const advancedMode = Boolean(options.advancedMode);
   const editTools = model.editMode
     ? `
       <div class="layout-edit-bar">
-        <div class="layout-handle">Arraste para reorganizar</div>
+        <div class="layout-handle">${advancedMode ? "Modo avancado • ajuste livre" : "Arraste para reorganizar"}</div>
         <div class="layout-edit-actions">
-          <button class="ghost-button small" data-action="resize-layout-card" data-layout-page="${page}" data-layout-card="${cardId}" data-layout-dimension="width" data-layout-direction="decrease" aria-label="Diminuir largura ${escapeHtml(title)}">- largura</button>
-          <button class="ghost-button small" data-action="resize-layout-card" data-layout-page="${page}" data-layout-card="${cardId}" data-layout-dimension="width" data-layout-direction="increase" aria-label="Aumentar largura ${escapeHtml(title)}">+ largura</button>
-          <button class="ghost-button small" data-action="resize-layout-card" data-layout-page="${page}" data-layout-card="${cardId}" data-layout-dimension="height" data-layout-direction="decrease" aria-label="Diminuir altura ${escapeHtml(title)}">- altura</button>
-          <button class="ghost-button small" data-action="resize-layout-card" data-layout-page="${page}" data-layout-card="${cardId}" data-layout-dimension="height" data-layout-direction="increase" aria-label="Aumentar altura ${escapeHtml(title)}">+ altura</button>
+          <button class="ghost-button small" type="button" data-action="resize-layout-card" data-layout-page="${page}" data-layout-card="${cardId}" data-layout-dimension="width" data-layout-direction="decrease" aria-label="Diminuir largura ${escapeHtml(title)}">- largura</button>
+          <button class="ghost-button small" type="button" data-action="resize-layout-card" data-layout-page="${page}" data-layout-card="${cardId}" data-layout-dimension="width" data-layout-direction="increase" aria-label="Aumentar largura ${escapeHtml(title)}">+ largura</button>
+          <button class="ghost-button small" type="button" data-action="resize-layout-card" data-layout-page="${page}" data-layout-card="${cardId}" data-layout-dimension="height" data-layout-direction="decrease" aria-label="Diminuir altura ${escapeHtml(title)}">- altura</button>
+          <button class="ghost-button small" type="button" data-action="resize-layout-card" data-layout-page="${page}" data-layout-card="${cardId}" data-layout-dimension="height" data-layout-direction="increase" aria-label="Aumentar altura ${escapeHtml(title)}">+ altura</button>
+          ${advancedMode ? `
+            <button class="ghost-button small" type="button" data-action="nudge-layout-card" data-layout-page="${page}" data-layout-card="${cardId}" data-layout-axis="x" data-layout-direction="decrease" aria-label="Mover ${escapeHtml(title)} para a esquerda">esq</button>
+            <button class="ghost-button small" type="button" data-action="nudge-layout-card" data-layout-page="${page}" data-layout-card="${cardId}" data-layout-axis="x" data-layout-direction="increase" aria-label="Mover ${escapeHtml(title)} para a direita">dir</button>
+            <button class="ghost-button small" type="button" data-action="nudge-layout-card" data-layout-page="${page}" data-layout-card="${cardId}" data-layout-axis="y" data-layout-direction="decrease" aria-label="Mover ${escapeHtml(title)} para cima">cima</button>
+            <button class="ghost-button small" type="button" data-action="nudge-layout-card" data-layout-page="${page}" data-layout-card="${cardId}" data-layout-axis="y" data-layout-direction="increase" aria-label="Mover ${escapeHtml(title)} para baixo">baixo</button>
+            <button class="ghost-button small" type="button" data-action="layer-layout-card" data-layout-page="${page}" data-layout-card="${cardId}" data-layout-direction="decrease" aria-label="Enviar ${escapeHtml(title)} para tras">- camada</button>
+            <button class="ghost-button small" type="button" data-action="layer-layout-card" data-layout-page="${page}" data-layout-card="${cardId}" data-layout-direction="increase" aria-label="Trazer ${escapeHtml(title)} para frente">+ camada</button>
+          ` : ""}
           <span class="layout-size-pill">${escapeHtml(LAYOUT_WIDTH_LABELS[layoutItem.width] || layoutItem.width)} • ${escapeHtml(LAYOUT_HEIGHT_LABELS[layoutItem.height] || layoutItem.height)}</span>
         </div>
       </div>
     `
     : "";
+  const inlineStyle = advancedMode ? getFreeformCardStyle(layoutItem) : "";
 
   return `
     <div
-      class="layout-card ${model.editMode ? "editable" : ""} ${widthClass} ${heightClass}"
-      ${model.editMode ? 'draggable="true"' : ""}
+      class="layout-card ${model.editMode ? "editable" : ""} ${advancedMode ? "freeform" : ""} ${widthClass} ${heightClass}"
+      ${model.editMode && !advancedMode ? 'draggable="true"' : ""}
       data-layout-page="${page}"
       data-layout-card="${cardId}"
+      ${inlineStyle ? `style="${inlineStyle}"` : ""}
     >
       ${editTools}
       ${panel(title, body, { ...options, wide: false })}
     </div>
+  `;
+}
+
+function renderLayoutPage(page, model, cards, options = {}) {
+  const entries = model.settings.layouts[page] || [];
+  const advancedMode = isAdvancedLayoutMode(model, options);
+  const canvasHeight = advancedMode ? getLayoutCanvasHeight(entries) : 0;
+  return `
+    <section
+      class="layout-grid ${advancedMode ? "layout-grid-freeform" : ""}"
+      ${advancedMode ? `style="--layout-canvas-height:${canvasHeight}px"` : ""}
+      data-layout-surface="${page}"
+    >
+      ${entries.map((entry) => cards[entry.id]).filter(Boolean).join("")}
+    </section>
   `;
 }
 
@@ -515,46 +584,31 @@ function renderChecklistPage(model, options = {}) {
         </section>
       `).join("")
     : emptyState("Nada para executar nesta lista agora.");
-
-  const rail = `
-    <aside class="checklist-rail">
-      <div class="checklist-rail-card">
-        <span class="page-kicker">Listas</span>
-        <h3>Execucao rapida</h3>
-        <p>Inspirado no TickTick: menos friccao, mais clareza operacional.</p>
-      </div>
-      <div class="checklist-nav-list">
-        ${renderChecklistViewButtons(model, options)}
-      </div>
-    </aside>
-  `;
-
   const summaryPills = metaPills([
     `${model.checklist.views.find((view) => view.id === model.checklist.activeView)?.label || "Lista atual"}`,
     `${model.checklist.groups.reduce((sum, group) => sum + group.count, 0)} item(ns)`,
     `${model.selectedDay.totalLoad}/${model.selectedDay.totalCapacity} min no dia`,
   ]);
-
-  return `
-    <section class="checklist-workspace ${options.isMobile ? "mobile" : ""}">
-      ${options.isMobile ? "" : rail}
-      <div class="checklist-main">
-        <section class="checklist-header">
-          <div>
-            <span class="page-kicker">Checklist operacional</span>
-            <h3>${escapeHtml(model.checklist.views.find((view) => view.id === model.checklist.activeView)?.label || "Checklist")}</h3>
-            <p>Marque, edite, arraste e reorganize. O que voce concluir aqui reflete no Hoje e no resto do sistema.</p>
-          </div>
-          <div class="meta-row">${summaryPills}</div>
-        </section>
-        ${options.isMobile ? `<div class="checklist-mobile-rail">${renderChecklistViewButtons(model, options)}</div>` : ""}
-        ${renderChecklistQuickAdd(model)}
-        <section class="checklist-groups">
-          ${mainGroups}
-        </section>
+  const advancedMode = isAdvancedLayoutMode(model, options);
+  const cards = {
+    views: layoutCard("checklist", "views", "Listas e foco operacional", `
+      <div class="checklist-rail-card">
+        <span class="page-kicker">Listas</span>
+        <h3>Execucao rapida</h3>
+        <p>Marque, edite, arraste e reorganize sem sair da tela operacional.</p>
       </div>
-    </section>
-  `;
+      <div class="checklist-nav-list">${renderChecklistViewButtons(model, options)}</div>
+      <div class="meta-row">${summaryPills}</div>
+    `, model, { advancedMode }),
+    capture: layoutCard("checklist", "capture", "Nova tarefa operacional", renderChecklistQuickAdd(model), model, { advancedMode }),
+    lists: layoutCard("checklist", "lists", model.checklist.views.find((view) => view.id === model.checklist.activeView)?.label || "Checklist", `
+      <section class="checklist-groups">
+        ${mainGroups}
+      </section>
+    `, model, { wide: true, advancedMode }),
+  };
+
+  return renderLayoutPage("checklist", model, cards, options);
 }
 
 function renderOrganizeTaskCard(task, options = {}) {
@@ -782,7 +836,7 @@ function renderMobileTopbar(model, options = {}) {
       <div class="mobile-topbar-row">
         <button
           class="ghost-button small icon-button"
-          data-action="${options.navOpen ? "close-mobile-nav" : "toggle-mobile-nav"}"
+          data-action="${options.navOpen ? "close-sidebar" : "toggle-sidebar"}"
           aria-label="${options.navOpen ? "Fechar menu" : "Abrir menu"}"
         >
           ${options.navOpen ? "Fechar" : "Menu"}
@@ -798,14 +852,14 @@ function renderMobileTopbar(model, options = {}) {
 }
 
 function renderSidebar(model, options = {}) {
-  const mobileClass = options.isMobile ? "mobile-drawer" : "";
-  const openClass = options.isMobile && options.navOpen ? "open" : "";
+  const mobileClass = options.isMobile ? "mobile-drawer" : "desktop-drawer";
+  const openClass = options.navOpen ? "open" : "";
   return `
-    <aside class="workspace-sidebar ${mobileClass} ${openClass}" ${options.isMobile ? `aria-hidden="${options.navOpen ? "false" : "true"}"` : ""}>
+    <aside class="workspace-sidebar ${mobileClass} ${openClass}" aria-hidden="${options.navOpen ? "false" : "true"}">
       ${options.isMobile ? `
         <div class="mobile-sidebar-head">
           <span class="page-kicker">Navegacao</span>
-          <button class="ghost-button small" data-action="close-mobile-nav">Fechar</button>
+          <button class="ghost-button small" data-action="close-sidebar">Fechar</button>
         </div>
       ` : ""}
       <div class="brand-block">
@@ -824,8 +878,8 @@ function renderSidebar(model, options = {}) {
         </div>
       `).join("")}
       <div class="sidebar-footer">
-        <button class="ghost-button full" data-action="toggle-edit-mode">${model.editMode ? "Sair do modo edicao" : "Entrar no modo edicao"}</button>
-        <button class="ghost-button full" data-action="reset-app">Resetar base local</button>
+        <button class="ghost-button full" type="button" data-action="toggle-edit-mode">${model.editMode ? "Sair do modo edicao" : "Entrar no modo edicao"}</button>
+        <button class="ghost-button full" type="button" data-action="reset-app">Resetar base local</button>
       </div>
     </aside>
   `;
@@ -878,6 +932,7 @@ function renderFilterGrid(model) {
 function renderHeaderToolbar(model, options = {}) {
   return `
     <div class="toolbar-row ${options.subtle ? "subtle-toolbar" : ""}">
+      <button class="ghost-button" data-action="toggle-sidebar">${model.settings.sidebarCollapsed ? "Menu" : "Sidebar"}</button>
       <button class="ghost-button" data-action="clear-filters">Limpar filtros</button>
       <button class="secondary-button" data-action="replan-week">Reorganizar semana</button>
       <button class="primary-button" data-action="navigate" data-section="inbox">${options.mobileCopy ? "Nova captura" : "Nova captura"}</button>
@@ -900,6 +955,7 @@ function renderHeader(model, options = {}) {
             <p>${escapeHtml(page.text)}</p>
           </div>
           <div class="header-badges mobile-header-badges">
+            <button class="ghost-button small" data-action="toggle-sidebar">Menu</button>
             ${badge(`Energia ${model.dashboard.energyLabel}`)}
             ${model.selectedDay.alerts ? badge(`${model.selectedDay.alerts} alerta(s)`, "warning") : badge("Sem alertas", "success")}
           </div>
@@ -935,6 +991,7 @@ function renderHeader(model, options = {}) {
             <p>${escapeHtml(page.text)}</p>
           </div>
           <div class="header-badges">
+            <button class="ghost-button small" data-action="toggle-sidebar">Menu</button>
             ${badge(`Energia ${model.dashboard.energyLabel}`)}
             ${badge(`Metodo ${model.options.methods.find((item) => item.id === model.priorityMethod)?.label || model.priorityMethod}`)}
           </div>
@@ -966,7 +1023,8 @@ function renderHeader(model, options = {}) {
   `;
 }
 
-function renderDashboardPage(model) {
+function renderDashboardPage(model, options = {}) {
+  const advancedMode = isAdvancedLayoutMode(model, options);
   const cards = {
     overview: layoutCard("dashboard", "overview", "Panorama da semana", `
       <div class="metric-grid four">
@@ -975,12 +1033,12 @@ function renderDashboardPage(model) {
         ${metricCard("Energia", model.dashboard.energyLabel, "Usada para capacidade real")}
         ${metricCard("Dias para mudanca", String(model.dashboard.daysToMove), "Meta ate novembro")}
       </div>
-    `, model),
+    `, model, { advancedMode }),
     radar: layoutCard("dashboard", "radar", "Radar da semana", `
       <div class="stack-list">
         ${(model.dashboard.alerts.length ? model.dashboard.alerts : [{ title: "Semana sob controle", gtdDecision: "OK", areaName: "Sistema", score: 0, reasons: ["sem gargalos criticos"], suggestions: [], subtasks: [] }]).map((task) => task.id ? taskCard(task, { mode: "alert" }) : `<div class="callout success"><strong>${escapeHtml(task.title)}</strong><p>${escapeHtml(task.reasons[0])}</p></div>`).join("")}
       </div>
-    `, model),
+    `, model, { advancedMode }),
     goals: layoutCard("dashboard", "goals", "Metas principais", `
       <div class="stack-list compact-stack">
         ${model.dashboard.mainGoals.map((goal) => `
@@ -990,7 +1048,7 @@ function renderDashboardPage(model) {
           </div>
         `).join("")}
       </div>
-    `, model),
+    `, model, { advancedMode }),
     areas: layoutCard("dashboard", "areas", "Resumo das areas", `
       <div class="stack-list compact-stack">
         ${model.dashboard.areaSummaries.map((area) => `
@@ -1000,7 +1058,7 @@ function renderDashboardPage(model) {
           </article>
         `).join("")}
       </div>
-    `, model),
+    `, model, { advancedMode }),
     projects: layoutCard("dashboard", "projects", "Resumo dos projetos", `
       <div class="stack-list compact-stack">
         ${model.dashboard.projectSummaries.map((project) => `
@@ -1010,7 +1068,7 @@ function renderDashboardPage(model) {
           </article>
         `).join("")}
       </div>
-    `, model),
+    `, model, { advancedMode }),
     load: layoutCard("dashboard", "load", "Carga semanal", `
       <div class="week-load-grid">
         ${model.dashboard.load.days.map((day) => `
@@ -1021,19 +1079,20 @@ function renderDashboardPage(model) {
           </article>
         `).join("")}
       </div>
-    `, model),
+    `, model, { advancedMode }),
   };
 
-  return `<section class="layout-grid">${model.settings.layouts.dashboard.map((entry) => cards[entry.id]).filter(Boolean).join("")}</section>`;
+  return renderLayoutPage("dashboard", model, cards, options);
 }
 
 function renderTodayPage(model, options = {}) {
   const topPriorities = model.selectedDay.tasks.slice(0, 3);
   const queue = model.selectedDay.tasks.slice(3, options.isMobile ? 8 : 10);
   const alertTasks = model.selectedDay.tasks.filter((task) => task.manualDecision || task.location === "alert");
+  const advancedMode = isAdvancedLayoutMode(model, options);
   const cards = {
-    focus: layoutCard("today", "focus", "3 prioridades do dia", taskList(topPriorities, { emphasis: true, empty: "O dia esta leve. Use para recuperar energia ou simplificar backlog." }), model, { wide: true }),
-    queue: layoutCard("today", "queue", "Fila do dia", taskList(queue, { empty: "Sem fila pendente para hoje." }), model),
+    focus: layoutCard("today", "focus", "3 prioridades do dia", taskList(topPriorities, { emphasis: true, empty: "O dia esta leve. Use para recuperar energia ou simplificar backlog." }), model, { wide: true, advancedMode }),
+    queue: layoutCard("today", "queue", "Fila do dia", taskList(queue, { empty: "Sem fila pendente para hoje." }), model, { advancedMode }),
     checklist: layoutCard("today", "checklist", "Checklist do dia", `
       <div class="today-checklist-head">
         <div class="meta-row">${metaPills([
@@ -1043,7 +1102,7 @@ function renderTodayPage(model, options = {}) {
         <p class="muted-copy">Checklist operacional do dia, ligado ao que realmente entrou na execucao.</p>
       </div>
       ${renderChecklistItems(model.todayChecklist.items, model.selectedDate)}
-    `, model),
+    `, model, { advancedMode }),
     alerts: layoutCard("today", "alerts", "Tipo de dia, carga e alertas", `
       <div class="stack-list compact-stack">
         <div class="callout ${model.selectedDay.lowCapacity ? "warning" : "success"}">
@@ -1061,7 +1120,7 @@ function renderTodayPage(model, options = {}) {
         </div>
         ${taskList(alertTasks, { empty: "Nenhuma decisao manual pendente.", mode: "alert" })}
       </div>
-    `, model),
+    `, model, { advancedMode }),
   };
 
   const mobileAlertStrip = options.isMobile
@@ -1099,64 +1158,71 @@ function renderTodayPage(model, options = {}) {
       </div>
     </section>
     ${mobileAlertStrip}
-    <section class="layout-grid">${model.settings.layouts.today.map((entry) => cards[entry.id]).filter(Boolean).join("")}</section>
+    ${renderLayoutPage("today", model, cards, options)}
   `;
 }
 
-function renderDaysPage(model) {
-  return `
-    <section class="page-grid two">
-      ${panel("Leitura do dia", `
-        <div class="callout ${model.selectedDay.lowCapacity ? "warning" : ""}">
-          <strong>${escapeHtml(model.selectedDay.type.label)}</strong>
-          <p>${escapeHtml(model.selectedDay.type.explanation)} ${model.selectedDay.totalLoad}/${model.selectedDay.totalCapacity} min usados.</p>
-        </div>
-        <div class="period-editor-grid">
-          ${model.selectedDay.periods.map((period) => `
-            <article class="period-card ${period.overload ? "overload" : ""}">
-              <div class="period-head"><strong>${escapeHtml(period.label)}</strong><span>${period.load}/${period.capacity} min</span></div>
-              <select data-period-type-date="${model.selectedDay.date}" data-period-id="${period.id}">
-                ${model.options.dayTypes.map((type) => `<option value="${type.id}" ${period.type.id === type.id ? "selected" : ""}>${escapeHtml(type.label)}</option>`).join("")}
-              </select>
-              ${taskList(period.tasks, { empty: "Sem tarefas neste periodo." })}
-            </article>
-          `).join("")}
-        </div>
-      `, { badge: model.selectedDay.lowCapacity ? "Capacidade baixa" : "Capacidade ok", badgeTone: model.selectedDay.lowCapacity ? "warning" : "success" })}
-      ${panel("Urgentes e alertas", taskList(model.selectedDay.tasks.filter((task) => task.critical || task.manualDecision || task.location === "alert"), { empty: "Nenhum item urgente no dia.", mode: "alert" }))}
-    </section>
-  `;
+function renderDaysPage(model, options = {}) {
+  const advancedMode = isAdvancedLayoutMode(model, options);
+  const cards = {
+    snapshot: layoutCard("days", "snapshot", "Leitura do dia", `
+      <div class="callout ${model.selectedDay.lowCapacity ? "warning" : ""}">
+        <strong>${escapeHtml(model.selectedDay.type.label)}</strong>
+        <p>${escapeHtml(model.selectedDay.type.explanation)} ${model.selectedDay.totalLoad}/${model.selectedDay.totalCapacity} min usados.</p>
+      </div>
+      <div class="meta-row">${metaPills([
+        model.selectedDay.longLabel,
+        `${model.selectedDay.totalLoad}/${model.selectedDay.totalCapacity} min`,
+        `${model.selectedDay.alerts} alerta(s)`,
+      ])}</div>
+    `, model, { advancedMode }),
+    periods: layoutCard("days", "periods", "Capacidade por periodo", `
+      <div class="period-editor-grid">
+        ${model.selectedDay.periods.map((period) => `
+          <article class="period-card ${period.overload ? "overload" : ""}">
+            <div class="period-head"><strong>${escapeHtml(period.label)}</strong><span>${period.load}/${period.capacity} min</span></div>
+            <select data-period-type-date="${model.selectedDay.date}" data-period-id="${period.id}">
+              ${model.options.dayTypes.map((type) => `<option value="${type.id}" ${period.type.id === type.id ? "selected" : ""}>${escapeHtml(type.label)}</option>`).join("")}
+            </select>
+            ${taskList(period.tasks, { empty: "Sem tarefas neste periodo." })}
+          </article>
+        `).join("")}
+      </div>
+    `, model, { wide: true, advancedMode }),
+    alerts: layoutCard("days", "alerts", "Urgentes e alertas", taskList(model.selectedDay.tasks.filter((task) => task.critical || task.manualDecision || task.location === "alert"), { empty: "Nenhum item urgente no dia.", mode: "alert" }), model, { advancedMode }),
+  };
+  return renderLayoutPage("days", model, cards, options);
 }
-function renderInboxPage(model) {
-  return `
-    <section class="page-grid two">
-      ${panel("Captura rapida", `
-        <div class="simple-capture-shell">
-          <div class="callout success">
-            <strong>So capture.</strong>
-            <p>Sem area, sem projeto, sem prazo. Registre rapido aqui e organize depois.</p>
-          </div>
-          <form class="simple-capture-form minimal-capture-form" data-form="capture-task">
-            <label class="field">
-              <span>Nova captura</span>
-              <input name="title" placeholder="Ex: ligar para o cliente, revisar proposta, separar documentos..." required />
-            </label>
-            <div class="toolbar-row">
-              ${renderVoiceCaptureButton("Microfone", "inbox")}
-              <button class="primary-button" type="submit">Enviar</button>
-            </div>
-          </form>
+function renderInboxPage(model, options = {}) {
+  const advancedMode = isAdvancedLayoutMode(model, options);
+  const cards = {
+    capture: layoutCard("inbox", "capture", "Captura rapida", `
+      <div class="simple-capture-shell">
+        <div class="callout success">
+          <strong>So capture.</strong>
+          <p>Sem area, sem projeto, sem prazo. Registre rapido aqui e organize depois.</p>
         </div>
-      `, { wide: true })}
-      ${panel("Capturas recentes", `
-        <div class="meta-row">${metaPills([
-          `${model.inbox.counts.raw} na inbox`,
-          `${model.inbox.counts.recent} recentes`,
-        ])}</div>
-        ${taskList(model.inbox.recent, { empty: "Sem capturas recentes. Use o campo acima ou o microfone." })}
-      `)}
-    </section>
-  `;
+        <form class="simple-capture-form minimal-capture-form" data-form="capture-task">
+          <label class="field">
+            <span>Nova captura</span>
+            <input name="title" placeholder="Ex: ligar para o cliente, revisar proposta, separar documentos..." required />
+          </label>
+          <div class="toolbar-row">
+            ${renderVoiceCaptureButton("Microfone", "inbox")}
+            <button class="primary-button" type="submit">Enviar</button>
+          </div>
+        </form>
+      </div>
+    `, model, { advancedMode }),
+    recent: layoutCard("inbox", "recent", "Capturas recentes", `
+      <div class="meta-row">${metaPills([
+        `${model.inbox.counts.raw} na inbox`,
+        `${model.inbox.counts.recent} recentes`,
+      ])}</div>
+      ${taskList(model.inbox.recent, { empty: "Sem capturas recentes. Use o campo acima ou o microfone." })}
+    `, model, { advancedMode }),
+  };
+  return renderLayoutPage("inbox", model, cards, options);
 }
 
 function renderPrioritizePage(model, options = {}) {
@@ -1193,20 +1259,20 @@ function renderPrioritizePage(model, options = {}) {
       <div class="method-strip">${model.options.methods.map((item) => `<button class="chip-button ${model.priorityMethod === item.id ? "active" : ""}" data-action="set-priority-method" data-method="${item.id}">${escapeHtml(item.label)}</button>`).join("")}</div>
       <p class="muted-copy">${escapeHtml(model.options.methods.find((item) => item.id === model.priorityMethod)?.guide || "")}</p>
       <div class="stage-grid">${model.prioritize.stages.map((stage) => `<article class="stage-card"><strong>${escapeHtml(stage.decision)}</strong><span>${stage.count} tarefa(s)</span><div class="stage-mini-list">${stage.tasks.slice(0, 3).map((task) => `<small>${escapeHtml(task.title)}</small>`).join("") || "<small>Sem itens</small>"}</div></article>`).join("")}</div>
-    `, model, { wide: true }),
+    `, model, { wide: true, advancedMode: isAdvancedLayoutMode(model, options) }),
     frogs: layoutCard("prioritize", "frogs", "Sapo do dia e da semana", `
       <div class="stack-list compact-stack">
         ${model.prioritize.dayFrog ? taskCard(model.prioritize.dayFrog, { emphasis: true }) : emptyState("Nenhum sapo do dia definido.")}
         ${model.prioritize.weekFrog ? taskCard(model.prioritize.weekFrog, { emphasis: true }) : emptyState("Nenhum sapo da semana definido.")}
       </div>
-    `, model),
+    `, model, { advancedMode: isAdvancedLayoutMode(model, options) }),
     auto: layoutCard("prioritize", "auto", "Piloto automatico", `
       <div class="callout success">
         <strong>Priorizacao automatica ligada.</strong>
         <p>A linha de raciocinio orienta GTD, Sapo e refino agil. Voce ajusta so quando precisar corrigir.</p>
       </div>
       ${renderAutoPilotList(model.prioritize.autoPilot)}
-    `, model),
+    `, model, { advancedMode: isAdvancedLayoutMode(model, options) }),
     ranked: layoutCard("prioritize", "ranked", "Refino final e explicacao", `
       ${taskList(model.prioritize.ranked, { empty: "Nada para refinar agora." })}
       <div class="reading-card">
@@ -1214,10 +1280,10 @@ function renderPrioritizePage(model, options = {}) {
         <p>${escapeHtml(model.settings.reasoningLine)}</p>
         <button class="ghost-button small" data-action="navigate" data-section="settings">Editar linha de raciocinio</button>
       </div>
-    `, model, { wide: true }),
+    `, model, { wide: true, advancedMode: isAdvancedLayoutMode(model, options) }),
   };
 
-  return `<section class="layout-grid">${model.settings.layouts.prioritize.map((entry) => cards[entry.id]).filter(Boolean).join("")}</section>`;
+  return renderLayoutPage("prioritize", model, cards, options);
 }
 
 function renderOrganizePage(model, options = {}) {
@@ -1253,7 +1319,7 @@ function renderOrganizePage(model, options = {}) {
           </article>
         `).join("")}
       </section>
-    `, model, { wide: true }),
+    `, model, { wide: true, advancedMode: isAdvancedLayoutMode(model, options) }),
     summary: layoutCard("organize", "summary", "Leitura simples da organizacao", `
       <div class="metric-grid four">
         ${metricCard("Fazer agora", String(model.organize.find((bucket) => bucket.id === "do-now")?.tasks.length || 0), "Execucao imediata")}
@@ -1265,14 +1331,35 @@ function renderOrganizePage(model, options = {}) {
         <strong>Organizar = ajuste final antes da semana.</strong>
         <p>A Entrada captura, o motor interpreta e esta tela fica com a decisao humana final: revisar, destrinchar, agendar e mandar para a Agenda.</p>
       </div>
-    `, model, { wide: true }),
+    `, model, { wide: true, advancedMode: isAdvancedLayoutMode(model, options) }),
   };
 
-  return `<section class="layout-grid">${model.settings.layouts.organize.map((entry) => cards[entry.id]).filter(Boolean).join("")}</section>`;
+  return renderLayoutPage("organize", model, cards, options);
 }
 
-function renderAreasPage(model) {
-  return `<section class="page-grid two">${model.areas.map((area) => panel(area.name, `<p class="muted-copy">${escapeHtml(area.description)}</p><div class="meta-row">${metaPills([`${area.openCount} abertas`, `${area.priorityCount} em destaque`, `${area.alerts} alertas`])}</div>${taskList(area.nextTasks, { empty: "Sem tarefas abertas nesta area." })}<div class="toolbar-row"><button class="ghost-button" data-action="open-editor" data-kind="area" data-id="${area.id}">Editar area</button></div>`)).join("")}</section>`;
+function renderAreasPage(model, options = {}) {
+  const advancedMode = isAdvancedLayoutMode(model, options);
+  const totals = model.areas.reduce((accumulator, area) => ({
+    open: accumulator.open + area.openCount,
+    priority: accumulator.priority + area.priorityCount,
+    alerts: accumulator.alerts + area.alerts,
+  }), { open: 0, priority: 0, alerts: 0 });
+  const cards = {
+    overview: layoutCard("areas", "overview", "Mapa das areas", `
+      <div class="metric-grid four">
+        ${metricCard("Areas", String(model.areas.length), "Frentes organizadas no sistema")}
+        ${metricCard("Abertas", String(totals.open), "Tarefas em andamento")}
+        ${metricCard("Destaque", String(totals.priority), "Itens em evidencia")}
+        ${metricCard("Alertas", String(totals.alerts), "Pontos que pedem atencao")}
+      </div>
+    `, model, { advancedMode }),
+    list: layoutCard("areas", "list", "Resumo por area", `
+      <div class="page-grid two">
+        ${model.areas.map((area) => panel(area.name, `<p class="muted-copy">${escapeHtml(area.description)}</p><div class="meta-row">${metaPills([`${area.openCount} abertas`, `${area.priorityCount} em destaque`, `${area.alerts} alertas`])}</div>${taskList(area.nextTasks, { empty: "Sem tarefas abertas nesta area." })}<div class="toolbar-row"><button class="ghost-button" data-action="open-editor" data-kind="area" data-id="${area.id}">Editar area</button></div>`)).join("")}
+      </div>
+    `, model, { wide: true, advancedMode }),
+  };
+  return renderLayoutPage("areas", model, cards, options);
 }
 
 function renderProjectLinkList(entries = [], emptyMessage) {
@@ -1323,181 +1410,170 @@ function renderProjectOkrs(entries = [], projectId) {
   `).join("")}</div>`;
 }
 
-function renderProjectsPage(model) {
+function renderProjectsPage(model, options = {}) {
   const projectView = model.projectsView;
   const selected = projectView.selected;
+  const advancedMode = isAdvancedLayoutMode(model, options);
+  const selectorBody = `
+    <div class="project-template-grid">
+      ${projectView.templates.map((template) => `<button class="ghost-button" type="button" data-action="create-project-template" data-project-template="${template.id}">${escapeHtml(template.label)}</button>`).join("")}
+    </div>
+    <p class="muted-copy">Cada template abre um workspace base com blocos sugeridos.</p>
+    <div class="project-selector-list">
+      ${projectView.summaries.map((project) => `
+        <button class="project-selector-card ${project.active ? "active" : ""}" type="button" data-action="select-project" data-project-id="${project.id}">
+          <span class="page-kicker">${escapeHtml(project.projectType || "Projeto")}</span>
+          <strong>${escapeHtml(project.name)}</strong>
+          <p>${escapeHtml(project.summary || "Sem resumo ainda.")}</p>
+          <div class="meta-row">${metaPills([`${project.openCount} abertas`, `${project.progress}%`, project.sprintTitle || "Sem sprint"])}</div>
+        </button>
+      `).join("")}
+    </div>
+  `;
 
   if (!selected) {
-    return `
-      <section class="project-workspace-shell">
-        <aside class="project-list-column">
-          ${panel("Templates", `<div class="project-template-grid">${projectView.templates.map((template) => `<button class="ghost-button" type="button" data-action="create-project-template" data-project-template="${template.id}">${escapeHtml(template.label)}</button>`).join("")}</div>`)}
-        </aside>
-        <section class="project-workspace-column">
-          ${panel("Projetos", `<div class="callout"><strong>Sem projeto selecionado.</strong><p>Crie um projeto a partir de um template para abrir a pagina individual dele.</p></div>`)}
-        </section>
-      </section>
-    `;
+    const emptyCards = {
+      selector: layoutCard("projects", "selector", "Projetos e templates", selectorBody, model, { advancedMode }),
+      overview: layoutCard("projects", "overview", "Visao geral", emptyState("Crie ou selecione um projeto para abrir a pagina dele."), model, { advancedMode }),
+      info: layoutCard("projects", "info", "Central de informacoes", emptyState("Links, referencias e notas ficam aqui."), model, { advancedMode }),
+      okrs: layoutCard("projects", "okrs", "OKRs do projeto", emptyState("Os OKRs do projeto aparecem aqui."), model, { advancedMode }),
+      backlog: layoutCard("projects", "backlog", "Backlog do projeto", emptyState("Ideias e pendencias futuras aparecem aqui."), model, { advancedMode }),
+      base: layoutCard("projects", "base", "Atividades base", emptyState("Checklists e tarefas-modelo ficam aqui."), model, { advancedMode }),
+      action: layoutCard("projects", "action", "Plano de acao", emptyState("As proximas acoes do projeto ficam aqui."), model, { advancedMode }),
+      generated: layoutCard("projects", "generated", "Tarefas geradas no sistema", emptyState("As tarefas geradas vao primeiro para Organizar."), model, { wide: true, advancedMode }),
+    };
+    return renderLayoutPage("projects", model, emptyCards, options);
   }
 
   const areaOptions = model.options.areas.map((area) => `<option value="${area.id}" ${selected.areaId === area.id ? "selected" : ""}>${escapeHtml(area.name)}</option>`).join("");
   const sprintOptions = `<option value="">Sem sprint</option>${model.options.sprints.map((sprint) => `<option value="${sprint.id}" ${selected.sprintId === sprint.id ? "selected" : ""}>${escapeHtml(sprint.title)}</option>`).join("")}`;
   const templateOptions = model.options.projectTemplates.map((template) => `<option value="${template.id}" ${selected.templateId === template.id ? "selected" : ""}>${escapeHtml(template.label)}</option>`).join("");
 
-  return `
-    <section class="project-workspace-shell">
-      <aside class="project-list-column">
-        ${panel("Templates de projeto", `
-          <div class="project-template-grid">
-            ${projectView.templates.map((template) => `<button class="ghost-button" type="button" data-action="create-project-template" data-project-template="${template.id}">${escapeHtml(template.label)}</button>`).join("")}
-          </div>
-          <p class="muted-copy">Cada template abre um workspace base ja com blocos sugeridos.</p>
-        `)}
-        ${panel("Projetos ativos", `
-          <div class="project-selector-list">
-            ${projectView.summaries.map((project) => `
-              <button class="project-selector-card ${project.active ? "active" : ""}" type="button" data-action="select-project" data-project-id="${project.id}">
-                <span class="page-kicker">${escapeHtml(project.projectType || "Projeto")}</span>
-                <strong>${escapeHtml(project.name)}</strong>
-                <p>${escapeHtml(project.summary || "Sem resumo ainda.")}</p>
-                <div class="meta-row">${metaPills([`${project.openCount} abertas`, `${project.progress}%`, project.sprintTitle || "Sem sprint"])}</div>
-              </button>
-            `).join("")}
-          </div>
-        `)}
-      </aside>
+  const cards = {
+    selector: layoutCard("projects", "selector", "Projetos e templates", selectorBody, model, { advancedMode }),
+    overview: layoutCard("projects", "overview", "Visao geral", `
+      <div class="project-hero-card">
+        <div>
+          <span class="page-kicker">${escapeHtml(selected.projectType || "Projeto")}</span>
+          <h3>${escapeHtml(selected.name)}</h3>
+          <p>${escapeHtml(selected.summary || "Sem resumo ainda.")}</p>
+        </div>
+        <div class="meta-row">${metaPills([
+          `${selected.openTasks.length} abertas`,
+          `${selected.generatedTasks.length} no fluxo`,
+          selected.sprintTitle || "Sem sprint",
+          selected.priority ? `Prioridade ${selected.priority}` : "",
+        ])}</div>
+      </div>
+      <div class="field-grid two">
+        <label class="field"><span>Nome do projeto</span><input name="name" value="${escapeHtml(selected.name || "")}" /></label>
+        <label class="field"><span>Template / tipo</span><select name="templateId">${templateOptions}</select></label>
+      </div>
+      <div class="field-grid four">
+        <label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label>
+        <label class="field"><span>Status</span><input name="status" value="${escapeHtml(selected.status || "active")}" /></label>
+        <label class="field"><span>Prazo</span><input type="date" name="dueDate" value="${escapeHtml(selected.dueDate || "")}" /></label>
+        <label class="field"><span>Prioridade</span><select name="priority"><option value="low" ${selected.priority === "low" ? "selected" : ""}>Baixa</option><option value="medium" ${selected.priority === "medium" ? "selected" : ""}>Media</option><option value="high" ${selected.priority === "high" ? "selected" : ""}>Alta</option></select></label>
+      </div>
+      <div class="field-grid two">
+        <label class="field"><span>Sprint relacionado</span><select name="sprintId">${sprintOptions}</select></label>
+        <label class="field"><span>Tipo exibido</span><input name="projectType" value="${escapeHtml(selected.projectType || "")}" /></label>
+      </div>
+      <label class="field"><span>Descricao</span><textarea name="description">${escapeHtml(selected.description || "")}</textarea></label>
+      <label class="field"><span>Objetivo principal</span><textarea name="objective">${escapeHtml(selected.objective || "")}</textarea></label>
+      <label class="field"><span>Resumo curto</span><textarea name="summary">${escapeHtml(selected.summary || "")}</textarea></label>
+    `, model, { advancedMode }),
+    info: layoutCard("projects", "info", "Central de informacoes", `
+      ${renderProjectLinkList(selected.infoLinks, "Sem links principais ainda.")}
+      ${renderProjectLinkList(selected.referenceEntries, "Sem referencias ainda.")}
+      <div class="field-grid two">
+        <label class="field"><span>Links (um por linha: titulo | url)</span><textarea name="infoLinks" placeholder="Drive | https://...&#10;Notion | https://...">${escapeHtml((selected.infoLinks || []).map((entry) => [entry.label || "", entry.url || ""].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
+        <label class="field"><span>Arquivos / referencias (titulo | url)</span><textarea name="referenceEntries" placeholder="Briefing | https://...">${escapeHtml((selected.referenceEntries || []).map((entry) => [entry.label || "", entry.url || ""].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
+      </div>
+      <div class="field-grid two">
+        <label class="field"><span>Decisoes importantes</span><textarea name="decisionLines" placeholder="Uma decisao por linha">${escapeHtml((selected.decisionLines || []).join("\n"))}</textarea></label>
+        <label class="field"><span>Observacoes</span><textarea name="observationLines" placeholder="Uma observacao por linha">${escapeHtml((selected.observationLines || []).join("\n"))}</textarea></label>
+      </div>
+      <label class="field"><span>Notas livres</span><textarea name="freeNotes">${escapeHtml(selected.freeNotes || "")}</textarea></label>
+    `, model, { advancedMode }),
+    okrs: layoutCard("projects", "okrs", "OKRs do projeto", `
+      ${renderProjectOkrs(selected.okrs || [], selected.id)}
+      <label class="field"><span>Editar OKRs (objetivo | status | progresso | KR1 ; KR2 ; KR3)</span><textarea name="okrs">${escapeHtml((selected.okrs || []).map((entry) => [entry.title || "", entry.status || "active", entry.progress || 0, (entry.keyResults || []).join("; ")].join(" | ")).join("\n"))}</textarea></label>
+    `, model, { advancedMode }),
+    backlog: layoutCard("projects", "backlog", "Backlog do projeto", `
+      ${renderProjectPlainList(selected.backlogItems || [], "Sem backlog ainda.", { projectId: selected.id, sourceType: "backlog", taskButton: "Gerar tarefa" })}
+      <label class="field"><span>Backlog (titulo | observacao)</span><textarea name="backlogItems">${escapeHtml((selected.backlogItems || []).map((entry) => [entry.title || "", entry.notes || ""].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
+    `, model, { advancedMode }),
+    base: layoutCard("projects", "base", "Atividades base", `
+      ${renderProjectPlainList(selected.baseActivities || [], "Sem atividades base ainda.", { projectId: selected.id, sourceType: "base", taskButton: "Virar tarefa" })}
+      <label class="field"><span>Atividades base (titulo | item 1 ; item 2 ; item 3)</span><textarea name="baseActivities">${escapeHtml((selected.baseActivities || []).map((entry) => [entry.title || "", (entry.checklist || []).join("; ")].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
+    `, model, { advancedMode }),
+    action: layoutCard("projects", "action", "Plano de acao", `
+      ${renderProjectPlainList(selected.actionPlan || [], "Sem plano de acao ainda.", { projectId: selected.id, sourceType: "action", taskButton: "Gerar tarefa" })}
+      <label class="field"><span>Plano de acao (titulo | proxima acao | item 1 ; item 2)</span><textarea name="actionPlan">${escapeHtml((selected.actionPlan || []).map((entry) => [entry.title || "", entry.nextAction || "", (entry.checklist || []).join("; ")].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
+    `, model, { advancedMode }),
+    generated: layoutCard("projects", "generated", "Tarefas geradas no sistema", `
+      <div class="callout">
+        <strong>Fluxo do projeto</strong>
+        <p>Projeto -> gerar tarefas -> Organizar -> Agenda -> Hoje. Nada vem direto para Hoje.</p>
+      </div>
+      ${taskList(selected.generatedTasks, { empty: "Nenhuma tarefa gerada ainda para este projeto." })}
+    `, model, { wide: true, advancedMode }),
+  };
 
-      <section class="project-workspace-column">
-        <form class="project-workspace-form" data-form="project-workspace">
-          <input type="hidden" name="id" value="${escapeHtml(selected.id)}" />
-          <div class="project-hero-card">
-            <div>
-              <span class="page-kicker">${escapeHtml(selected.projectType || "Projeto")}</span>
-              <h3>${escapeHtml(selected.name)}</h3>
-              <p>${escapeHtml(selected.summary || "Sem resumo ainda.")}</p>
+  return `
+    <form class="project-workspace-form" data-form="project-workspace">
+      <input type="hidden" name="id" value="${escapeHtml(selected.id)}" />
+      ${renderLayoutPage("projects", model, cards, options)}
+      <div class="toolbar-row project-form-actions">
+        <button class="primary-button" type="submit">Salvar projeto</button>
+        <button class="ghost-button" type="button" data-action="open-editor" data-kind="project" data-id="${selected.id}">Editor avancado</button>
+      </div>
+    </form>
+  `;
+}
+
+function renderPlanningPage(model, options = {}) {
+  const advancedMode = isAdvancedLayoutMode(model, options);
+  const cards = {
+    sprints: layoutCard("planning", "sprints", "Sprints do ano", `
+      <div class="callout success">
+        <strong>${model.planning.currentSprint ? escapeHtml(model.planning.currentSprint.title) : "Sem sprint atual"}</strong>
+        <p>A linha de raciocinio e o sprint atual influenciam automaticamente a prioridade das tarefas capturadas na Entrada.</p>
+      </div>
+      <div class="stack-list compact-stack">
+        ${model.planning.sprints.map((sprint) => `
+          <article class="reading-card sprint-card ${sprint.status === "current" ? "active" : ""}">
+            <div class="task-card-top">
+              <div>
+                <div class="meta-row">${metaPills([`Sprint ${sprint.slot}`, sprint.periodLabel, sprint.status === "current" ? "Atual" : sprint.status === "upcoming" ? "Proximo" : "Planejado"])}</div>
+                <strong>${escapeHtml(sprint.title)}</strong>
+                <p>${escapeHtml(sprint.description || sprint.theme || "Sem descricao ainda.")}</p>
+              </div>
+              ${badge(sprint.status === "current" ? "Ativo" : "Livre", sprint.status === "current" ? "success" : "")}
             </div>
+            ${sprint.priorities?.length ? `<div class="meta-row">${metaPills(sprint.priorities)}</div>` : ""}
             <div class="meta-row">${metaPills([
-              `${selected.openTasks.length} abertas`,
-              `${selected.generatedTasks.length} no fluxo`,
-              selected.sprintTitle || "Sem sprint",
-              selected.priority ? `Prioridade ${selected.priority}` : "",
+              sprint.projectNames?.length ? `Projetos: ${sprint.projectNames.join(", ")}` : "",
+              sprint.objectiveTitles?.length ? `Objetivos: ${sprint.objectiveTitles.length}` : "",
             ])}</div>
-          </div>
-
-          <div class="project-section-grid">
-            ${panel("Visao geral", `
-              <div class="field-grid two">
-                <label class="field"><span>Nome do projeto</span><input name="name" value="${escapeHtml(selected.name || "")}" /></label>
-                <label class="field"><span>Template / tipo</span><select name="templateId">${templateOptions}</select></label>
-              </div>
-              <div class="field-grid four">
-                <label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label>
-                <label class="field"><span>Status</span><input name="status" value="${escapeHtml(selected.status || "active")}" /></label>
-                <label class="field"><span>Prazo</span><input type="date" name="dueDate" value="${escapeHtml(selected.dueDate || "")}" /></label>
-                <label class="field"><span>Prioridade</span><select name="priority"><option value="low" ${selected.priority === "low" ? "selected" : ""}>Baixa</option><option value="medium" ${selected.priority === "medium" ? "selected" : ""}>Media</option><option value="high" ${selected.priority === "high" ? "selected" : ""}>Alta</option></select></label>
-              </div>
-              <div class="field-grid two">
-                <label class="field"><span>Sprint relacionado</span><select name="sprintId">${sprintOptions}</select></label>
-                <label class="field"><span>Tipo exibido</span><input name="projectType" value="${escapeHtml(selected.projectType || "")}" /></label>
-              </div>
-              <label class="field"><span>Descricao</span><textarea name="description">${escapeHtml(selected.description || "")}</textarea></label>
-              <label class="field"><span>Objetivo principal</span><textarea name="objective">${escapeHtml(selected.objective || "")}</textarea></label>
-              <label class="field"><span>Resumo curto</span><textarea name="summary">${escapeHtml(selected.summary || "")}</textarea></label>
-            `, { wide: true })}
-
-            ${panel("Central de informacoes", `
-              ${renderProjectLinkList(selected.infoLinks, "Sem links principais ainda.")}
-              ${renderProjectLinkList(selected.referenceEntries, "Sem referencias ainda.")}
-              <div class="field-grid two">
-                <label class="field"><span>Links (um por linha: titulo | url)</span><textarea name="infoLinks" placeholder="Drive | https://...&#10;Notion | https://...">${escapeHtml((selected.infoLinks || []).map((entry) => [entry.label || "", entry.url || ""].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
-                <label class="field"><span>Arquivos / referencias (titulo | url)</span><textarea name="referenceEntries" placeholder="Briefing | https://...">${escapeHtml((selected.referenceEntries || []).map((entry) => [entry.label || "", entry.url || ""].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
-              </div>
-              <div class="field-grid two">
-                <label class="field"><span>Decisoes importantes</span><textarea name="decisionLines" placeholder="Uma decisao por linha">${escapeHtml((selected.decisionLines || []).join("\n"))}</textarea></label>
-                <label class="field"><span>Observacoes</span><textarea name="observationLines" placeholder="Uma observacao por linha">${escapeHtml((selected.observationLines || []).join("\n"))}</textarea></label>
-              </div>
-              <label class="field"><span>Notas livres</span><textarea name="freeNotes">${escapeHtml(selected.freeNotes || "")}</textarea></label>
-            `, { wide: true })}
-
-            ${panel("OKRs do projeto", `
-              ${renderProjectOkrs(selected.okrs || [], selected.id)}
-              <label class="field"><span>Editar OKRs (objetivo | status | progresso | KR1 ; KR2 ; KR3)</span><textarea name="okrs">${escapeHtml((selected.okrs || []).map((entry) => [entry.title || "", entry.status || "active", entry.progress || 0, (entry.keyResults || []).join("; ")].join(" | ")).join("\n"))}</textarea></label>
-            `, { wide: true })}
-
-            ${panel("Backlog do projeto", `
-              ${renderProjectPlainList(selected.backlogItems || [], "Sem backlog ainda.", { projectId: selected.id, sourceType: "backlog", taskButton: "Gerar tarefa" })}
-              <label class="field"><span>Backlog (titulo | observacao)</span><textarea name="backlogItems">${escapeHtml((selected.backlogItems || []).map((entry) => [entry.title || "", entry.notes || ""].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
-            `)}
-
-            ${panel("Atividades base", `
-              ${renderProjectPlainList(selected.baseActivities || [], "Sem atividades base ainda.", { projectId: selected.id, sourceType: "base", taskButton: "Virar tarefa" })}
-              <label class="field"><span>Atividades base (titulo | item 1 ; item 2 ; item 3)</span><textarea name="baseActivities">${escapeHtml((selected.baseActivities || []).map((entry) => [entry.title || "", (entry.checklist || []).join("; ")].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
-            `)}
-
-            ${panel("Plano de acao", `
-              ${renderProjectPlainList(selected.actionPlan || [], "Sem plano de acao ainda.", { projectId: selected.id, sourceType: "action", taskButton: "Gerar tarefa" })}
-              <label class="field"><span>Plano de acao (titulo | proxima acao | item 1 ; item 2)</span><textarea name="actionPlan">${escapeHtml((selected.actionPlan || []).map((entry) => [entry.title || "", entry.nextAction || "", (entry.checklist || []).join("; ")].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
-            `)}
-
-            ${panel("Tarefas geradas no sistema", `
-              <div class="callout">
-                <strong>Fluxo do projeto</strong>
-                <p>Projeto -> gerar tarefas -> Organizar -> Agenda -> Hoje. Nada vem direto para Hoje.</p>
-              </div>
-              ${taskList(selected.generatedTasks, { empty: "Nenhuma tarefa gerada ainda para este projeto." })}
-            `, { wide: true })}
-          </div>
-
-          <div class="toolbar-row project-form-actions">
-            <button class="primary-button" type="submit">Salvar projeto</button>
-            <button class="ghost-button" type="button" data-action="open-editor" data-kind="project" data-id="${selected.id}">Editor avancado</button>
-          </div>
-        </form>
-      </section>
-    </section>
-  `;
+            <div class="toolbar-row">
+              <button class="secondary-button" data-action="set-active-sprint" data-sprint-id="${sprint.id}">Marcar como atual</button>
+              <button class="ghost-button" data-action="open-editor" data-kind="sprint" data-id="${sprint.id}">Editar sprint</button>
+            </div>
+          </article>
+        `).join("")}
+      </div>
+    `, model, { wide: true, advancedMode }),
+    objectives: layoutCard("planning", "objectives", "Objetivos", `<div class="stack-list compact-stack">${model.planning.objectives.map((objective) => `<article class="goal-row"><div><strong>${escapeHtml(objective.title)}</strong><p>${escapeHtml(objective.description)}</p></div><div class="goal-meter">${progressBar(objective.progress)}<span>${objective.progress}%</span></div></article>`).join("")}</div>`, model, { advancedMode }),
+    backlog: layoutCard("planning", "backlog", "Backlog", taskList(model.planning.backlog, { empty: "Backlog limpo." }), model, { advancedMode }),
+    templates: layoutCard("planning", "templates", "Modelos", taskList(model.planning.templates, { empty: "Sem modelos ainda." }), model, { advancedMode }),
+  };
+  return renderLayoutPage("planning", model, cards, options);
 }
 
-function renderPlanningPage(model) {
-  return `
-    <section class="page-grid two">
-      ${panel("Sprints do ano", `
-        <div class="callout success">
-          <strong>${model.planning.currentSprint ? escapeHtml(model.planning.currentSprint.title) : "Sem sprint atual"}</strong>
-          <p>A linha de raciocinio e o sprint atual influenciam automaticamente a prioridade das tarefas capturadas na Entrada.</p>
-        </div>
-        <div class="stack-list compact-stack">
-          ${model.planning.sprints.map((sprint) => `
-            <article class="reading-card sprint-card ${sprint.status === "current" ? "active" : ""}">
-              <div class="task-card-top">
-                <div>
-                  <div class="meta-row">${metaPills([`Sprint ${sprint.slot}`, sprint.periodLabel, sprint.status === "current" ? "Atual" : sprint.status === "upcoming" ? "Proximo" : "Planejado"])}</div>
-                  <strong>${escapeHtml(sprint.title)}</strong>
-                  <p>${escapeHtml(sprint.description || sprint.theme || "Sem descricao ainda.")}</p>
-                </div>
-                ${badge(sprint.status === "current" ? "Ativo" : "Livre", sprint.status === "current" ? "success" : "")}
-              </div>
-              ${sprint.priorities?.length ? `<div class="meta-row">${metaPills(sprint.priorities)}</div>` : ""}
-              <div class="meta-row">${metaPills([
-                sprint.projectNames?.length ? `Projetos: ${sprint.projectNames.join(", ")}` : "",
-                sprint.objectiveTitles?.length ? `Objetivos: ${sprint.objectiveTitles.length}` : "",
-              ])}</div>
-              <div class="toolbar-row">
-                <button class="secondary-button" data-action="set-active-sprint" data-sprint-id="${sprint.id}">Marcar como atual</button>
-                <button class="ghost-button" data-action="open-editor" data-kind="sprint" data-id="${sprint.id}">Editar sprint</button>
-              </div>
-            </article>
-          `).join("")}
-        </div>
-      `, { wide: true })}
-      ${panel("Objetivos", `<div class="stack-list compact-stack">${model.planning.objectives.map((objective) => `<article class="goal-row"><div><strong>${escapeHtml(objective.title)}</strong><p>${escapeHtml(objective.description)}</p></div><div class="goal-meter">${progressBar(objective.progress)}<span>${objective.progress}%</span></div></article>`).join("")}</div>`)}
-      ${panel("Backlog", taskList(model.planning.backlog, { empty: "Backlog limpo." }))}
-      ${panel("Modelos", taskList(model.planning.templates, { empty: "Sem modelos ainda." }))}
-    </section>
-  `;
-}
-
-function renderAgendaPage(model) {
+function renderAgendaPage(model, options = {}) {
+  const advancedMode = isAdvancedLayoutMode(model, options);
   const cards = {
     week: layoutCard("agenda", "week", "Kanban semanal editavel", `
       <div class="callout success">
@@ -1522,7 +1598,7 @@ function renderAgendaPage(model) {
           </article>
         `).join("")}
       </div>
-    `, model, { wide: true }),
+    `, model, { wide: true, advancedMode }),
     editor: layoutCard("agenda", "editor", "Fila para encaixar e blocos", `
       <div class="reading-card">
         <div class="panel-head">
@@ -1544,122 +1620,169 @@ function renderAgendaPage(model) {
         ${panel("Blocos do dia selecionado", renderAgendaBlockEditor(model.agenda.days.find((day) => day.date === model.selectedDate)?.blocks || [], model))}
       </div>
       ${panel("Google Calendar", `<form class="form-grid" data-form="google-config"><label class="field"><span>Client ID</span><input name="clientId" value="${escapeHtml(model.agenda.google.clientId || "")}" /></label><label class="field"><span>API Key</span><input name="apiKey" value="${escapeHtml(model.agenda.google.apiKey || "")}" /></label><label class="field"><span>Calendar ID</span><input name="calendarId" value="${escapeHtml(model.agenda.google.calendarId || "primary")}" /></label><div class="toolbar-row"><button class="primary-button" type="submit">Salvar</button><button class="secondary-button" type="button" data-action="connect-google">Conectar Google</button><button class="ghost-button" type="button" data-action="sync-google">Sincronizar blocos</button></div></form><p class="muted-copy">Status: ${model.agenda.connected ? "conectado" : "nao conectado"}</p>`)}
-    `, model, { wide: true }),
+    `, model, { wide: true, advancedMode }),
   };
 
-  return `<section class="layout-grid">${model.settings.layouts.agenda.map((entry) => cards[entry.id]).filter(Boolean).join("")}</section>`;
+  return renderLayoutPage("agenda", model, cards, options);
 }
 
-function renderSettingsPage(model) {
-  return `
-    <section class="page-grid two">
-      ${panel("Modo edicao e layout", `<div class="callout ${model.settings.editMode ? "warning" : ""}"><strong>${model.settings.editMode ? "Modo edicao ativo" : "Modo visualizacao ativo"}</strong><p>${model.settings.editMode ? "Voce pode arrastar e redimensionar cards em um grid flexivel, sem perder a organizacao." : "Layout travado para uso diario seguro."}</p></div><div class="toolbar-row"><button class="secondary-button" data-action="toggle-edit-mode">${model.settings.editMode ? "Desligar modo edicao" : "Ligar modo edicao"}</button><button class="ghost-button" data-action="save-layout-default">Salvar layout atual</button><button class="ghost-button" data-action="restore-layout-default">Restaurar layout padrao</button></div><div class="meta-row">${metaPills([`Modo: ${model.settings.layoutMode}`, model.settings.layoutCapabilities.resizeEnabled ? "Resize ativo" : "Resize inativo", model.settings.layoutCapabilities.futureFreeformReady ? "Base pronta para layout livre" : "Grid fixo"])}</div><div class="layout-summary-grid">${renderLayoutSummary(model.settings.layouts)}</div>`, { wide: true })}
-      ${panel("Configuracoes do sistema", `
-        <form class="form-grid" data-form="settings-form">
-          <div class="field-grid two">
-            <label class="field"><span>Densidade visual</span><select name="visualDensity"><option value="calm" ${model.settings.visualDensity === "calm" ? "selected" : ""}>Calma</option><option value="compact" ${model.settings.visualDensity === "compact" ? "selected" : ""}>Compacta</option></select></label>
-            <label class="field"><span>Tom visual</span><select name="accentTone"><option value="forest" ${model.settings.accentTone === "forest" ? "selected" : ""}>Forest</option><option value="meadow" ${model.settings.accentTone === "meadow" ? "selected" : ""}>Meadow</option><option value="stone" ${model.settings.accentTone === "stone" ? "selected" : ""}>Stone</option></select></label>
-          </div>
-          <div class="field-grid three">
-            <label class="field"><span>Mudanca</span><input type="number" step="0.01" name="moveProtection" value="${escapeHtml(model.settings.prioritization.moveProtection)}" /></label>
-            <label class="field"><span>Familia</span><input type="number" step="0.01" name="familyProtection" value="${escapeHtml(model.settings.prioritization.familyProtection)}" /></label>
-            <label class="field"><span>Limite de carga</span><input type="number" step="0.01" name="overloadLimit" value="${escapeHtml(model.settings.prioritization.overloadLimit)}" /></label>
-          </div>
-          <div class="field-grid two">
-            <label class="field"><span>Futuro</span><input type="number" step="0.01" name="futureFocus" value="${escapeHtml(model.settings.prioritization.futureFocus)}" /></label>
-            <label class="field"><span>Delegacao</span><input type="number" step="0.01" name="delegationBias" value="${escapeHtml(model.settings.prioritization.delegationBias)}" /></label>
-          </div>
-          <div class="callout success">
-            <strong>Calendario interno alinhado ao Brasil.</strong>
-            <p>Timezone padrao do app: ${escapeHtml(APP_TIMEZONE)}. O Google Calendar continua opcional e pode entrar depois sem quebrar o calendario interno.</p>
-          </div>
-          <label class="field"><span>Linha de raciocinio</span><textarea name="reasoningLine">${escapeHtml(model.settings.reasoningLine)}</textarea></label>
-          <div class="callout">
-            <strong>Vocabulario de voz</strong>
-            <p>Use aliases e associacoes para o sistema entender melhor como voce fala no celular e no dia a dia.</p>
-          </div>
-          <div class="field-grid two">
-            <label class="field">
-              <span>Aliases de projetos</span>
-              <textarea name="voiceProjectAliases" placeholder="movimento => project-conteudo&#10;financeira => project-financeira">${escapeHtml(model.settings.voiceAssistant.projectAliasesText || "")}</textarea>
-            </label>
-            <label class="field">
-              <span>Aliases de areas</span>
-              <textarea name="voiceAreaAliases" placeholder="cliente => area-work&#10;filhos => area-family">${escapeHtml(model.settings.voiceAssistant.areaAliasesText || "")}</textarea>
-            </label>
-          </div>
-          <label class="field">
-            <span>Associacoes frequentes</span>
-            <textarea name="voiceAssociations" placeholder="gravar => projeto:project-conteudo, contexto:creative, intencao:create-task, destino:project&#10;reuniao => area:area-work, contexto:planning, intencao:schedule, destino:agenda">${escapeHtml(model.settings.voiceAssistant.frequentAssociationsText || "")}</textarea>
-          </label>
-          <div class="callout">
-            <strong>Sincronizacao entre celular e desktop</strong>
-            <p>Modo recomendado: Supabase com snapshot unico do seu workspace. A captura continua local-first, mas com sincronizacao automatica entre dispositivos.</p>
-          </div>
-          <div class="field-grid two">
-            <label class="field">
-              <span>Ativar sincronizacao</span>
-              <select name="syncEnabled">
-                <option value="false" ${!model.settings.cloudSync.enabled ? "selected" : ""}>Desligada</option>
-                <option value="true" ${model.settings.cloudSync.enabled ? "selected" : ""}>Ligada</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Provider</span>
-              <select name="syncProvider">
-                <option value="supabase" ${model.settings.cloudSync.provider === "supabase" ? "selected" : ""}>Supabase</option>
-              </select>
-            </label>
-          </div>
-          <div class="field-grid two">
-            <label class="field"><span>Project URL</span><input name="syncProjectUrl" value="${escapeHtml(model.settings.cloudSync.projectUrl || "")}" placeholder="https://SEU-PROJETO.supabase.co" /></label>
-            <label class="field"><span>Anon / Publishable Key</span><input name="syncAnonKey" value="${escapeHtml(model.settings.cloudSync.anonKey || "")}" placeholder="sb_publishable_... ou anon key" /></label>
-          </div>
-          <div class="field-grid three">
-            <label class="field"><span>Tabela</span><input name="syncTableName" value="${escapeHtml(model.settings.cloudSync.tableName || "life_os_snapshots")}" /></label>
-            <label class="field"><span>Workspace Key</span><input name="syncWorkspaceKey" value="${escapeHtml(model.settings.cloudSync.workspaceKey || "")}" placeholder="chave privada do workspace" /></label>
-            <label class="field"><span>Intervalo (s)</span><input type="number" min="10" name="syncPollIntervalSeconds" value="${escapeHtml(model.settings.cloudSync.pollIntervalSeconds || 20)}" /></label>
-          </div>
-          <div class="toolbar-row">
-            <button class="ghost-button" type="button" data-action="generate-sync-key">Gerar workspace key</button>
-            <button class="ghost-button" type="button" data-action="sync-cloud-now">Sincronizar agora</button>
-          </div>
-          <div class="meta-row">${metaPills([
-            model.settings.cloudSync.lastSyncedAt ? `Ultimo envio: ${formatShortDate(model.settings.cloudSync.lastSyncedAt.slice(0, 10))}` : "Sem envio ainda",
-            model.settings.cloudSync.lastPulledAt ? `Ultima leitura: ${formatShortDate(model.settings.cloudSync.lastPulledAt.slice(0, 10))}` : "Sem leitura ainda",
-            model.settings.cloudSync.lastError ? `Erro: ${model.settings.cloudSync.lastError}` : "Sincronizacao sem erro registrado",
-          ])}</div>
-          <button class="primary-button" type="submit">Salvar configuracoes</button>
-        </form>
-      `)}
-      ${panel("Historico de interpretacao de voz", `
-        <div class="callout success">
-          <strong>Assistido, nao caixa-preta.</strong>
-          <p>O sistema guarda o que voce falou, o que entendeu e o que voce corrigiu para melhorar o entendimento com o tempo.</p>
-        </div>
-        <div class="stack-list compact-stack">
-          ${(model.settings.voiceAssistant.history || []).length
-            ? model.settings.voiceAssistant.history.map((entry) => `
-                <article class="reading-card">
-                  <div class="task-card-top">
-                    <div>
-                      <strong>${escapeHtml(entry.transcript || "Captura sem texto")}</strong>
-                      <p>${escapeHtml(formatShortDate(entry.savedAt?.slice(0, 10) || model.selectedDate))}</p>
-                    </div>
-                    ${badge(`${(entry.corrections || []).length} correcao(oes)`, (entry.corrections || []).length ? "warning" : "success")}
+function renderSettingsPage(model, options = {}) {
+  const advancedMode = isAdvancedLayoutMode(model, options);
+  const cards = {
+    layout: layoutCard("settings", "layout", "Layout e Aparencia", `
+      <div class="callout ${model.settings.editMode ? "warning" : ""}">
+        <strong>${model.settings.editMode ? "Modo edicao ativo" : "Modo visualizacao ativo"}</strong>
+        <p>${model.settings.advancedEditMode ? "Modo avancado ligado: ajuste livre, inclusive com sobreposicao." : "Use o grid editavel para reorganizar os blocos sem bagunca."}</p>
+      </div>
+      <div class="toolbar-row">
+        <button class="secondary-button" type="button" data-action="toggle-edit-mode">${model.settings.editMode ? "Desligar modo edicao" : "Ligar modo edicao"}</button>
+        <button class="ghost-button" type="button" data-action="save-layout-default" data-layout-page="${model.activeSection}">Salvar layout desta aba</button>
+        <button class="ghost-button" type="button" data-action="restore-layout-default" data-layout-page="${model.activeSection}">Restaurar layout desta aba</button>
+      </div>
+      <div class="meta-row">${metaPills([`Modo: ${model.settings.layoutMode}`, model.settings.layoutCapabilities.resizeEnabled ? "Resize ativo" : "Resize inativo", model.settings.layoutCapabilities.futureFreeformReady ? "Modo avancado pronto" : "Grid fixo"])}</div>
+      <div class="layout-summary-grid">${renderLayoutSummary(model.settings.layouts)}</div>
+    `, model, { wide: true, advancedMode }),
+    system: layoutCard("settings", "system", "Sistema e priorizacao", `
+      <div class="callout success">
+        <strong>Calendario interno alinhado ao Brasil.</strong>
+        <p>Timezone padrao do app: ${escapeHtml(APP_TIMEZONE)}. O Google Calendar continua opcional e pode entrar depois sem quebrar o calendario interno.</p>
+      </div>
+      <div class="field-grid three">
+        <label class="field"><span>Mudanca</span><input type="number" step="0.01" name="moveProtection" value="${escapeHtml(model.settings.prioritization.moveProtection)}" /></label>
+        <label class="field"><span>Familia</span><input type="number" step="0.01" name="familyProtection" value="${escapeHtml(model.settings.prioritization.familyProtection)}" /></label>
+        <label class="field"><span>Limite de carga</span><input type="number" step="0.01" name="overloadLimit" value="${escapeHtml(model.settings.prioritization.overloadLimit)}" /></label>
+      </div>
+      <div class="field-grid two">
+        <label class="field"><span>Futuro</span><input type="number" step="0.01" name="futureFocus" value="${escapeHtml(model.settings.prioritization.futureFocus)}" /></label>
+        <label class="field"><span>Delegacao</span><input type="number" step="0.01" name="delegationBias" value="${escapeHtml(model.settings.prioritization.delegationBias)}" /></label>
+      </div>
+      <label class="field"><span>Linha de raciocinio</span><textarea name="reasoningLine">${escapeHtml(model.settings.reasoningLine)}</textarea></label>
+    `, model, { advancedMode }),
+    sync: layoutCard("settings", "sync", "Sincronizacao", `
+      <div class="callout">
+        <strong>Sincronizacao entre celular e desktop</strong>
+        <p>Modo recomendado: Supabase com snapshot unico do seu workspace. A captura continua local-first, mas com sincronizacao automatica entre dispositivos.</p>
+      </div>
+      <div class="field-grid two">
+        <label class="field">
+          <span>Ativar sincronizacao</span>
+          <select name="syncEnabled">
+            <option value="false" ${!model.settings.cloudSync.enabled ? "selected" : ""}>Desligada</option>
+            <option value="true" ${model.settings.cloudSync.enabled ? "selected" : ""}>Ligada</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Provider</span>
+          <select name="syncProvider">
+            <option value="supabase" ${model.settings.cloudSync.provider === "supabase" ? "selected" : ""}>Supabase</option>
+          </select>
+        </label>
+      </div>
+      <div class="field-grid two">
+        <label class="field"><span>Project URL</span><input name="syncProjectUrl" value="${escapeHtml(model.settings.cloudSync.projectUrl || "")}" placeholder="https://SEU-PROJETO.supabase.co" /></label>
+        <label class="field"><span>Anon / Publishable Key</span><input name="syncAnonKey" value="${escapeHtml(model.settings.cloudSync.anonKey || "")}" placeholder="sb_publishable_... ou anon key" /></label>
+      </div>
+      <div class="field-grid three">
+        <label class="field"><span>Tabela</span><input name="syncTableName" value="${escapeHtml(model.settings.cloudSync.tableName || "life_os_snapshots")}" /></label>
+        <label class="field"><span>Workspace Key</span><input name="syncWorkspaceKey" value="${escapeHtml(model.settings.cloudSync.workspaceKey || "")}" placeholder="chave privada do workspace" /></label>
+        <label class="field"><span>Intervalo (s)</span><input type="number" min="10" name="syncPollIntervalSeconds" value="${escapeHtml(model.settings.cloudSync.pollIntervalSeconds || 20)}" /></label>
+      </div>
+      <div class="toolbar-row">
+        <button class="ghost-button" type="button" data-action="generate-sync-key">Gerar workspace key</button>
+        <button class="ghost-button" type="button" data-action="sync-cloud-now">Sincronizar agora</button>
+      </div>
+      <div class="meta-row">${metaPills([
+        model.settings.cloudSync.lastSyncedAt ? `Ultimo envio: ${formatShortDate(model.settings.cloudSync.lastSyncedAt.slice(0, 10))}` : "Sem envio ainda",
+        model.settings.cloudSync.lastPulledAt ? `Ultima leitura: ${formatShortDate(model.settings.cloudSync.lastPulledAt.slice(0, 10))}` : "Sem leitura ainda",
+        model.settings.cloudSync.lastError ? `Erro: ${model.settings.cloudSync.lastError}` : "Sincronizacao sem erro registrado",
+      ])}</div>
+    `, model, { advancedMode }),
+    voice: layoutCard("settings", "voice", "Voz e layout", `
+      <div class="callout">
+        <strong>Layout e assistentes</strong>
+        <p>Controle aqui a sidebar recolhida por padrao, a densidade visual e o vocabulario da captura por voz.</p>
+      </div>
+      <div class="field-grid two">
+        <label class="field">
+          <span>Sidebar recolhida por padrao</span>
+          <select name="sidebarCollapsed">
+            <option value="true" ${model.settings.sidebarCollapsed ? "selected" : ""}>Sim</option>
+            <option value="false" ${!model.settings.sidebarCollapsed ? "selected" : ""}>Nao</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Densidade visual</span>
+          <select name="visualDensity">
+            <option value="compact" ${model.settings.visualDensity === "compact" ? "selected" : ""}>Compacto</option>
+            <option value="comfortable" ${model.settings.visualDensity === "comfortable" ? "selected" : ""}>Confortavel</option>
+            <option value="ample" ${model.settings.visualDensity === "ample" ? "selected" : ""}>Amplo</option>
+          </select>
+        </label>
+      </div>
+      <div class="field-grid two">
+        <label class="field">
+          <span>Modo edicao avancado</span>
+          <select name="advancedEditMode">
+            <option value="false" ${!model.settings.advancedEditMode ? "selected" : ""}>Desligado</option>
+            <option value="true" ${model.settings.advancedEditMode ? "selected" : ""}>Ligado</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Tom visual</span>
+          <select name="accentTone"><option value="forest" ${model.settings.accentTone === "forest" ? "selected" : ""}>Forest</option><option value="meadow" ${model.settings.accentTone === "meadow" ? "selected" : ""}>Meadow</option><option value="stone" ${model.settings.accentTone === "stone" ? "selected" : ""}>Stone</option></select>
+        </label>
+      </div>
+      <div class="field-grid two">
+        <label class="field">
+          <span>Aliases de projetos</span>
+          <textarea name="voiceProjectAliases" placeholder="movimento => project-conteudo&#10;financeira => project-financeira">${escapeHtml(model.settings.voiceAssistant.projectAliasesText || "")}</textarea>
+        </label>
+        <label class="field">
+          <span>Aliases de areas</span>
+          <textarea name="voiceAreaAliases" placeholder="cliente => area-work&#10;filhos => area-family">${escapeHtml(model.settings.voiceAssistant.areaAliasesText || "")}</textarea>
+        </label>
+      </div>
+      <label class="field">
+        <span>Associacoes frequentes</span>
+        <textarea name="voiceAssociations" placeholder="gravar => projeto:project-conteudo, contexto:creative, intencao:create-task, destino:project&#10;reuniao => area:area-work, contexto:planning, intencao:schedule, destino:agenda">${escapeHtml(model.settings.voiceAssistant.frequentAssociationsText || "")}</textarea>
+      </label>
+    `, model, { advancedMode }),
+    history: layoutCard("settings", "history", "Historico de interpretacao de voz", `
+      <div class="callout success">
+        <strong>Assistido, nao caixa-preta.</strong>
+        <p>O sistema guarda o que voce falou, o que entendeu e o que voce corrigiu para melhorar o entendimento com o tempo.</p>
+      </div>
+      <div class="stack-list compact-stack">
+        ${(model.settings.voiceAssistant.history || []).length
+          ? model.settings.voiceAssistant.history.map((entry) => `
+              <article class="reading-card">
+                <div class="task-card-top">
+                  <div>
+                    <strong>${escapeHtml(entry.transcript || "Captura sem texto")}</strong>
+                    <p>${escapeHtml(formatShortDate(entry.savedAt?.slice(0, 10) || model.selectedDate))}</p>
                   </div>
-                  <div class="meta-row">${metaPills([
-                    `Entendeu: ${model.options.voiceIntents.find((item) => item.id === entry.understood?.intent)?.label || entry.understood?.intent || "-"}`,
-                    `Destino: ${model.options.voiceDestinations.find((item) => item.id === entry.corrected?.destination)?.label || entry.corrected?.destination || "-"}`,
-                    entry.corrected?.projectId ? `Projeto: ${model.options.projects.find((item) => item.id === entry.corrected.projectId)?.name || entry.corrected.projectId}` : "",
-                  ])}</div>
-                  ${(entry.corrections || []).length ? `<p class="muted-copy">Corrigido em: ${(entry.corrections || []).map((item) => `${item.field}: ${item.from || "-"} -> ${item.to || "-"}`).join(" | ")}</p>` : `<p class="muted-copy">Sem correcoes manuais nessa captura.</p>`}
-                </article>
-              `).join("")
-            : emptyState("Ainda nao ha historico de voz salvo.")}
-        </div>
-      `)}
-    </section>
+                  ${badge(`${(entry.corrections || []).length} correcao(oes)`, (entry.corrections || []).length ? "warning" : "success")}
+                </div>
+                <div class="meta-row">${metaPills([
+                  `Entendeu: ${model.options.voiceIntents.find((item) => item.id === entry.understood?.intent)?.label || entry.understood?.intent || "-"}`,
+                  `Destino: ${model.options.voiceDestinations.find((item) => item.id === entry.corrected?.destination)?.label || entry.corrected?.destination || "-"}`,
+                  entry.corrected?.projectId ? `Projeto: ${model.options.projects.find((item) => item.id === entry.corrected.projectId)?.name || entry.corrected.projectId}` : "",
+                ])}</div>
+                ${(entry.corrections || []).length ? `<p class="muted-copy">Corrigido em: ${(entry.corrections || []).map((item) => `${item.field}: ${item.from || "-"} -> ${item.to || "-"}`).join(" | ")}</p>` : `<p class="muted-copy">Sem correcoes manuais nessa captura.</p>`}
+              </article>
+            `).join("")
+          : emptyState("Ainda nao ha historico de voz salvo.")}
+      </div>
+    `, model, { wide: true, advancedMode }),
+  };
+
+  return `
+    <form class="form-grid settings-layout-form" data-form="settings-form">
+      ${renderLayoutPage("settings", model, cards, options)}
+      <div class="toolbar-row settings-submit-row">
+        <button class="primary-button" type="submit">Salvar configuracoes</button>
+      </div>
+    </form>
   `;
 }
 function renderFloatingAlert(task, options = {}) {
@@ -1704,17 +1827,17 @@ function formDataToObject(form) {
 
 function renderActivePage(model, options = {}) {
   switch (model.activeSection) {
-    case "dashboard": return renderDashboardPage(model);
+    case "dashboard": return renderDashboardPage(model, options);
     case "checklist": return renderChecklistPage(model, options);
-    case "days": return renderDaysPage(model);
-    case "inbox": return renderInboxPage(model);
+    case "days": return renderDaysPage(model, options);
+    case "inbox": return renderInboxPage(model, options);
     case "prioritize": return renderPrioritizePage(model, options);
     case "organize": return renderOrganizePage(model, options);
-    case "areas": return renderAreasPage(model);
-    case "projects": return renderProjectsPage(model);
-    case "planning": return renderPlanningPage(model);
-    case "agenda": return renderAgendaPage(model);
-    case "settings": return renderSettingsPage(model);
+    case "areas": return renderAreasPage(model, options);
+    case "projects": return renderProjectsPage(model, options);
+    case "planning": return renderPlanningPage(model, options);
+    case "agenda": return renderAgendaPage(model, options);
+    case "settings": return renderSettingsPage(model, options);
     case "today":
     default:
       return renderTodayPage(model, options);
@@ -1731,18 +1854,15 @@ function renderFooter(model) {
 }
 
 function renderLayoutSummary(layouts = {}) {
-  const labels = {
-    dashboard: "Dashboard",
-    today: "Hoje",
-    prioritize: "Priorizar",
-    organize: "Organizar",
-    agenda: "Agenda",
-  };
   return Object.entries(layouts).map(([page, entries]) => `
     <article class="layout-summary-card">
-      <strong>${escapeHtml(labels[page] || page)}</strong>
+      <strong>${escapeHtml(PAGE_LABELS[page] || page)}</strong>
       <div class="layout-summary-list">
         ${(entries || []).map((entry) => `<span class="meta-pill">${escapeHtml(entry.id)} • ${escapeHtml(LAYOUT_WIDTH_LABELS[entry.width] || entry.width)} • ${escapeHtml(LAYOUT_HEIGHT_LABELS[entry.height] || entry.height)}</span>`).join("")}
+      </div>
+      <div class="toolbar-row compact-actions">
+        <button class="ghost-button small" type="button" data-action="save-layout-default" data-layout-page="${page}">Salvar</button>
+        <button class="ghost-button small" type="button" data-action="restore-layout-default" data-layout-page="${page}">Restaurar</button>
       </div>
     </article>
   `).join("");
@@ -1768,9 +1888,11 @@ export class LifeOSApp {
     const incompatible = !loaded?.meta || Number(loaded.meta.version || 0) < APP_VERSION;
     this.state = incompatible ? await resetAppState(() => buildSeedState()) : loaded;
     this.lastIsMobile = this.isMobileViewport();
+    this.mobileNavOpen = !this.state?.settings?.sidebarCollapsed && !this.lastIsMobile;
     if (this.lastIsMobile && this.state?.ui?.activeSection !== "today") {
       this.state = setActiveSection(this.state, "today");
       this.state = await saveAppState(this.state);
+      this.mobileNavOpen = false;
     }
     const support = getVoiceCaptureSupport();
     this.voiceCapture = {
@@ -1822,7 +1944,7 @@ export class LifeOSApp {
     if (isMobile && this.state?.ui?.activeSection !== "today") {
       this.state = setActiveSection(this.state, "today");
     }
-    if (!isMobile) this.mobileNavOpen = false;
+    this.mobileNavOpen = isMobile ? false : !this.state?.settings?.sidebarCollapsed;
     this.render();
   }
 
@@ -2022,8 +2144,8 @@ export class LifeOSApp {
     if (action === "close-voice-capture-backdrop") { if (event.target !== trigger) return; this.closeVoiceCapture(); return; }
     if (action === "start-voice-capture") { this.startVoiceCapture(); return; }
     if (action === "stop-voice-capture") { this.stopVoiceCapture(); return; }
-    if (action === "toggle-mobile-nav") { this.mobileNavOpen = true; this.render(); return; }
-    if (action === "close-mobile-nav") { this.mobileNavOpen = false; this.render(); return; }
+    if (action === "toggle-mobile-nav" || action === "toggle-sidebar") { this.mobileNavOpen = !this.mobileNavOpen; this.render(); return; }
+    if (action === "close-mobile-nav" || action === "close-sidebar") { this.mobileNavOpen = false; this.render(); return; }
     if (action === "navigate") { this.state = setActiveSection(this.state, trigger.dataset.section); this.mobileNavOpen = false; await this.persist(); return; }
     if (action === "select-day") { this.state = setSelectedDate(this.state, trigger.dataset.date); await this.persist(); return; }
     if (action === "set-checklist-view") { this.state = setChecklistView(this.state, trigger.dataset.checklistView); await this.persist(); return; }
@@ -2053,6 +2175,16 @@ export class LifeOSApp {
     if (action === "delete-entity") { if (!window.confirm("Deseja excluir este item?")) return; this.state = deleteEntity(this.state, trigger.dataset.kind, trigger.dataset.id); await this.persist("Item removido."); return; }
     if (action === "replan-week") { const result = replanWeek(this.state, this.state.ui.selectedDate || today); this.state = result.nextState; await this.persist(`Semana reorganizada: ${result.movedCount} movidas, ${result.alertCount} alertas e ${result.reviewCount} revisoes.`); return; }
     if (action === "toggle-edit-mode") { this.state = toggleEditMode(this.state); await this.persist("Modo de edicao atualizado."); return; }
+    if (action === "nudge-layout-card") {
+      this.state = nudgeLayoutCard(this.state, trigger.dataset.layoutPage, trigger.dataset.layoutCard, trigger.dataset.layoutAxis, trigger.dataset.layoutDirection);
+      await this.persist("Posicao do bloco atualizada.");
+      return;
+    }
+    if (action === "layer-layout-card") {
+      this.state = layerLayoutCard(this.state, trigger.dataset.layoutPage, trigger.dataset.layoutCard, trigger.dataset.layoutDirection);
+      await this.persist("Camada do bloco atualizada.");
+      return;
+    }
     if (action === "resize-layout-card") {
       this.state = resizeLayoutCard(
         this.state,
@@ -2064,8 +2196,8 @@ export class LifeOSApp {
       await this.persist("Tamanho do bloco atualizado.");
       return;
     }
-    if (action === "save-layout-default") { this.state = saveCurrentLayoutAsDefault(this.state); await this.persist("Layout atual salvo."); return; }
-    if (action === "restore-layout-default") { this.state = restoreLayoutDefault(this.state); await this.persist("Layout restaurado."); return; }
+    if (action === "save-layout-default") { this.state = saveCurrentLayoutAsDefault(this.state, trigger.dataset.layoutPage || this.state.ui.activeSection); await this.persist("Layout salvo."); return; }
+    if (action === "restore-layout-default") { this.state = restoreLayoutDefault(this.state, trigger.dataset.layoutPage || this.state.ui.activeSection); await this.persist("Layout restaurado."); return; }
     if (action === "generate-sync-key") {
       const field = this.root.querySelector('input[name="syncWorkspaceKey"]');
       if (field instanceof HTMLInputElement) {
@@ -2159,6 +2291,7 @@ export class LifeOSApp {
     if (form.dataset.form === "entity-editor") { const payload = formDataToObject(form); this.state = saveEntity(this.state, payload.kind, payload); await this.persist("Item salvo."); return; }
     if (form.dataset.form === "settings-form") {
       this.state = saveSettings(this.state, formDataToObject(form));
+      this.mobileNavOpen = this.lastIsMobile ? false : !this.state.settings.sidebarCollapsed;
       this.refreshCloudSyncLoop();
       await this.persist("Configuracoes salvas.");
     }
@@ -2193,7 +2326,7 @@ export class LifeOSApp {
     }
 
     const item = event.target.closest("[data-layout-card]");
-    if (!item || !this.state?.settings?.editMode || !this.state?.settings?.layoutCapabilities?.dragEnabled) return;
+    if (!item || !this.state?.settings?.editMode || !this.state?.settings?.layoutCapabilities?.dragEnabled || this.state?.settings?.advancedEditMode) return;
     this.dragItem = { kind: "layout", page: item.dataset.layoutPage, cardId: item.dataset.layoutCard };
     item.classList.add("dragging");
     event.dataTransfer.effectAllowed = "move";
@@ -2350,10 +2483,9 @@ export class LifeOSApp {
     const model = buildAppModel(this.state, new Date());
     const isMobile = this.isMobileViewport();
     this.lastIsMobile = isMobile;
-    if (!isMobile) this.mobileNavOpen = false;
     this.root.innerHTML = isMobile
-      ? `<div class="app-shell mobile-shell density-${escapeHtml(model.settings.visualDensity)} tone-${escapeHtml(model.settings.accentTone)}">${this.toast ? `<div class="toast">${escapeHtml(this.toast)}</div>` : ""}${this.mobileNavOpen ? `<button class="mobile-nav-backdrop" data-action="close-mobile-nav" aria-label="Fechar menu"></button>` : ""}${renderSidebar(model, { isMobile: true, navOpen: this.mobileNavOpen })}<main class="workspace-main mobile-main">${renderMobileTopbar(model, { navOpen: this.mobileNavOpen })}${renderHeader(model, { isMobile: true })}<div class="page-shell">${renderActivePage(model, { isMobile: true })}</div>${renderFooter(model)}</main>${renderFloatingAlert(model.activeSection === "today" ? model.floatingAlert : null, { isMobile: true })}${renderVoiceCaptureModal(this.voiceCapture)}${renderEditorModal(model.editorView, model.options)}</div>`
-      : `<div class="app-shell desktop-shell density-${escapeHtml(model.settings.visualDensity)} tone-${escapeHtml(model.settings.accentTone)}">${this.toast ? `<div class="toast">${escapeHtml(this.toast)}</div>` : ""}<main class="workspace-root">${renderHeader(model, { isMobile: false })}<section class="workspace-desktop-grid"><div class="workspace-sidebar-column">${renderSidebar(model, { isMobile: false, navOpen: false })}</div><section class="workspace-content-column"><div class="page-shell">${renderActivePage(model, { isMobile: false })}</div>${renderFooter(model)}</section></section></main>${renderFloatingAlert(model.activeSection === "today" ? model.floatingAlert : null, { isMobile: false })}${renderVoiceCaptureModal(this.voiceCapture)}${renderEditorModal(model.editorView, model.options)}</div>`;
+      ? `<div class="app-shell mobile-shell density-${escapeHtml(model.settings.visualDensity)} tone-${escapeHtml(model.settings.accentTone)}">${this.toast ? `<div class="toast">${escapeHtml(this.toast)}</div>` : ""}${this.mobileNavOpen ? `<button class="workspace-nav-backdrop" data-action="close-sidebar" aria-label="Fechar menu"></button>` : ""}${renderSidebar(model, { isMobile: true, navOpen: this.mobileNavOpen })}<main class="workspace-main mobile-main">${renderMobileTopbar(model, { navOpen: this.mobileNavOpen })}${renderHeader(model, { isMobile: true })}<div class="page-shell">${renderActivePage(model, { isMobile: true })}</div>${renderFooter(model)}</main>${renderFloatingAlert(model.activeSection === "today" ? model.floatingAlert : null, { isMobile: true })}${renderVoiceCaptureModal(this.voiceCapture)}${renderEditorModal(model.editorView, model.options)}</div>`
+      : `<div class="app-shell desktop-shell density-${escapeHtml(model.settings.visualDensity)} tone-${escapeHtml(model.settings.accentTone)}">${this.toast ? `<div class="toast">${escapeHtml(this.toast)}</div>` : ""}${this.mobileNavOpen ? `<button class="workspace-nav-backdrop" data-action="close-sidebar" aria-label="Fechar menu"></button>` : ""}${renderSidebar(model, { isMobile: false, navOpen: this.mobileNavOpen })}<main class="workspace-root">${renderHeader(model, { isMobile: false })}<section class="workspace-content-column"><div class="page-shell">${renderActivePage(model, { isMobile: false })}</div>${renderFooter(model)}</section></main>${renderFloatingAlert(model.activeSection === "today" ? model.floatingAlert : null, { isMobile: false })}${renderVoiceCaptureModal(this.voiceCapture)}${renderEditorModal(model.editorView, model.options)}</div>`;
   }
 }
 

@@ -441,7 +441,9 @@ export function buildSeedState(baseDate = new Date()) {
     weeklyPlan: { energyLevel: 3, mainFocus: "Avancar na mudanca e nos projetos com clareza de agenda." },
     settings: {
       editMode: false,
-      visualDensity: "calm",
+      advancedEditMode: false,
+      sidebarCollapsed: true,
+      visualDensity: "compact",
       accentTone: "forest",
       layoutDefaults: {
         dashboard: [
@@ -458,6 +460,20 @@ export function buildSeedState(baseDate = new Date()) {
           { id: "checklist", width: "medium", height: "regular", frame: null },
           { id: "alerts", width: "full", height: "regular", frame: null },
         ],
+        checklist: [
+          { id: "views", width: "compact", height: "compact", frame: null },
+          { id: "capture", width: "compact", height: "compact", frame: null },
+          { id: "lists", width: "full", height: "tall", frame: null },
+        ],
+        days: [
+          { id: "snapshot", width: "medium", height: "compact", frame: null },
+          { id: "periods", width: "full", height: "tall", frame: null },
+          { id: "alerts", width: "medium", height: "regular", frame: null },
+        ],
+        inbox: [
+          { id: "capture", width: "medium", height: "compact", frame: null },
+          { id: "recent", width: "medium", height: "regular", frame: null },
+        ],
         prioritize: [
           { id: "pipeline", width: "full", height: "regular", frame: null },
           { id: "frogs", width: "medium", height: "regular", frame: null },
@@ -468,9 +484,36 @@ export function buildSeedState(baseDate = new Date()) {
           { id: "board", width: "full", height: "tall", frame: null },
           { id: "summary", width: "full", height: "compact", frame: null },
         ],
+        areas: [
+          { id: "overview", width: "medium", height: "compact", frame: null },
+          { id: "list", width: "full", height: "tall", frame: null },
+        ],
+        projects: [
+          { id: "selector", width: "compact", height: "tall", frame: null },
+          { id: "overview", width: "medium", height: "regular", frame: null },
+          { id: "info", width: "medium", height: "tall", frame: null },
+          { id: "okrs", width: "medium", height: "regular", frame: null },
+          { id: "backlog", width: "medium", height: "regular", frame: null },
+          { id: "base", width: "medium", height: "regular", frame: null },
+          { id: "action", width: "medium", height: "regular", frame: null },
+          { id: "generated", width: "full", height: "regular", frame: null },
+        ],
+        planning: [
+          { id: "sprints", width: "full", height: "tall", frame: null },
+          { id: "objectives", width: "medium", height: "regular", frame: null },
+          { id: "backlog", width: "medium", height: "regular", frame: null },
+          { id: "templates", width: "medium", height: "regular", frame: null },
+        ],
         agenda: [
           { id: "week", width: "full", height: "tall", frame: null },
           { id: "editor", width: "full", height: "regular", frame: null },
+        ],
+        settings: [
+          { id: "layout", width: "full", height: "regular", frame: null },
+          { id: "system", width: "medium", height: "tall", frame: null },
+          { id: "sync", width: "medium", height: "regular", frame: null },
+          { id: "voice", width: "medium", height: "regular", frame: null },
+          { id: "history", width: "full", height: "regular", frame: null },
         ],
       },
       layouts: {
@@ -488,6 +531,20 @@ export function buildSeedState(baseDate = new Date()) {
           { id: "checklist", width: "medium", height: "regular", frame: null },
           { id: "alerts", width: "full", height: "regular", frame: null },
         ],
+        checklist: [
+          { id: "views", width: "compact", height: "compact", frame: null },
+          { id: "capture", width: "compact", height: "compact", frame: null },
+          { id: "lists", width: "full", height: "tall", frame: null },
+        ],
+        days: [
+          { id: "snapshot", width: "medium", height: "compact", frame: null },
+          { id: "periods", width: "full", height: "tall", frame: null },
+          { id: "alerts", width: "medium", height: "regular", frame: null },
+        ],
+        inbox: [
+          { id: "capture", width: "medium", height: "compact", frame: null },
+          { id: "recent", width: "medium", height: "regular", frame: null },
+        ],
         prioritize: [
           { id: "pipeline", width: "full", height: "regular", frame: null },
           { id: "frogs", width: "medium", height: "regular", frame: null },
@@ -498,13 +555,40 @@ export function buildSeedState(baseDate = new Date()) {
           { id: "board", width: "full", height: "tall", frame: null },
           { id: "summary", width: "full", height: "compact", frame: null },
         ],
+        areas: [
+          { id: "overview", width: "medium", height: "compact", frame: null },
+          { id: "list", width: "full", height: "tall", frame: null },
+        ],
+        projects: [
+          { id: "selector", width: "compact", height: "tall", frame: null },
+          { id: "overview", width: "medium", height: "regular", frame: null },
+          { id: "info", width: "medium", height: "tall", frame: null },
+          { id: "okrs", width: "medium", height: "regular", frame: null },
+          { id: "backlog", width: "medium", height: "regular", frame: null },
+          { id: "base", width: "medium", height: "regular", frame: null },
+          { id: "action", width: "medium", height: "regular", frame: null },
+          { id: "generated", width: "full", height: "regular", frame: null },
+        ],
+        planning: [
+          { id: "sprints", width: "full", height: "tall", frame: null },
+          { id: "objectives", width: "medium", height: "regular", frame: null },
+          { id: "backlog", width: "medium", height: "regular", frame: null },
+          { id: "templates", width: "medium", height: "regular", frame: null },
+        ],
         agenda: [
           { id: "week", width: "full", height: "tall", frame: null },
           { id: "editor", width: "full", height: "regular", frame: null },
         ],
+        settings: [
+          { id: "layout", width: "full", height: "regular", frame: null },
+          { id: "system", width: "medium", height: "tall", frame: null },
+          { id: "sync", width: "medium", height: "regular", frame: null },
+          { id: "voice", width: "medium", height: "regular", frame: null },
+          { id: "history", width: "full", height: "regular", frame: null },
+        ],
       },
       layoutMode: "flex-grid",
-      layoutCapabilities: { resizeEnabled: true, dragEnabled: true, futureFreeformReady: true },
+      layoutCapabilities: { resizeEnabled: true, dragEnabled: true, futureFreeformReady: true, freeformEnabled: true },
       prioritization: { moveProtection: 1.18, familyProtection: 1.08, futureFocus: 1.12, delegationBias: 1.05, overloadLimit: 0.92 },
       reasoningLine: REASONING_BASE,
       voiceAssistant: {
