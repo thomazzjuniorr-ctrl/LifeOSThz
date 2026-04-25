@@ -3365,6 +3365,139 @@ body {
   grid-column: 1 / -1;
 }
 
+.layout-card[data-layout-page="checklist"][data-layout-card="views"],
+.layout-card[data-layout-page="checklist"][data-layout-card="lists"],
+.layout-card[data-layout-page="organize"][data-layout-card="board"],
+.layout-card[data-layout-page="organize"][data-layout-card="summary"],
+.layout-card[data-layout-page="agenda"][data-layout-card="week"],
+.layout-card[data-layout-page="agenda"][data-layout-card="editor"] {
+  grid-column: 1 / -1;
+}
+
+.layout-card[data-layout-page="checklist"][data-layout-card="views"] > .panel-card {
+  min-height: 0;
+  max-height: none;
+}
+
+.layout-card[data-layout-page="checklist"][data-layout-card="lists"] > .panel-card {
+  min-height: clamp(560px, 76vh, 900px);
+  max-height: none;
+  overflow: hidden;
+}
+
+.layout-card[data-layout-page="organize"][data-layout-card="board"] > .panel-card {
+  min-height: clamp(620px, 80vh, 980px);
+  max-height: none;
+  overflow: hidden;
+}
+
+.layout-card[data-layout-page="organize"][data-layout-card="summary"] > .panel-card {
+  min-height: 0;
+  max-height: none;
+}
+
+.layout-card[data-layout-page="agenda"][data-layout-card="week"] > .panel-card {
+  min-height: clamp(640px, 82vh, 1020px);
+  max-height: none;
+}
+
+.layout-card[data-layout-page="agenda"][data-layout-card="editor"] > .panel-card {
+  min-height: 0;
+  max-height: none;
+}
+
+.organize-board {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.8rem;
+  overflow: hidden;
+}
+
+.board-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-width: 0;
+  max-height: 72vh;
+  overflow: hidden;
+}
+
+.organize-column-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 0.15rem;
+}
+
+.organize-task-card {
+  max-width: 100%;
+  overflow: auto;
+}
+
+.checklist-nav-list {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0.72rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.1rem;
+  max-height: none;
+}
+
+.checklist-nav-button {
+  flex: 0 0 auto;
+  min-width: 168px;
+  width: auto;
+}
+
+.checklist-groups-scroll {
+  max-height: 72vh;
+}
+
+.checklist-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.checklist-group-body {
+  max-height: calc(72vh - 84px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 0.12rem;
+}
+
+.checklist-row {
+  grid-template-columns: auto minmax(0, 1fr) minmax(210px, auto);
+}
+
+.checklist-row-side {
+  min-width: 0;
+}
+
+.checklist-row .task-actions.compact-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.compact-agenda-callout {
+  padding: 0.72rem 0.84rem;
+}
+
+.compact-agenda-callout p,
+.compact-agenda-callout strong {
+  margin: 0;
+}
+
+.calendar-day-head {
+  gap: 0.2rem;
+}
+
+.calendar-day-column .meta-row {
+  gap: 0.32rem;
+}
+
 @media (max-width: 900px) {
   .workspace-root {
     padding-top: 0.4rem;
@@ -3381,12 +3514,29 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .organize-board {
+    grid-template-columns: 1fr;
+  }
+
+  .board-column,
   .calendar-day-column,
   .agenda-day-stack,
   .checklist-groups-scroll,
   .project-section-scroll,
   .checklist-nav-list {
     max-height: none;
+  }
+
+  .checklist-group-body {
+    max-height: none;
+  }
+
+  .checklist-row {
+    grid-template-columns: 1fr;
+  }
+
+  .checklist-row .task-actions.compact-actions {
+    justify-content: flex-start;
   }
 }
 

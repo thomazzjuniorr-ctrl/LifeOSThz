@@ -1,3 +1,6 @@
+// Arquivo publico carregado no navegador.
+// Use aqui apenas dados publicos, como URL do Supabase e anon key.
+// Nunca coloque service role keys ou segredos privados neste arquivo.
 window.__LIFE_OS_RUNTIME__ = window.__LIFE_OS_RUNTIME__ || {
   deployment: {
     platform: "vercel",

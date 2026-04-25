@@ -521,72 +521,26 @@ function renderChecklistRow(entry) {
       ${isTask
         ? `<button class="check-toggle ${isDone ? "done" : ""}" ${doneAction} aria-label="${escapeHtml(toggleLabel)}">${isDone ? "OK" : ""}</button>`
         : (buildChecklistToggleButton({ ...entry, done: isDone }, entry.scheduledDate) || `<span class="check-toggle static"></span>`)}
-      <div class="checklist-row-main">
-        <div class="checklist-row-copy">
-          <strong>${escapeHtml(entry.title)}</strong>
-          ${meta ? `<div class="meta-row">${meta}</div>` : ""}
-          ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}
+        <div class="checklist-row-main">
+          <div class="checklist-row-copy">
+            <strong>${escapeHtml(entry.title)}</strong>
+            ${meta ? `<div class="meta-row">${meta}</div>` : ""}
+            ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}
+          </div>
+          ${subtaskList}
         </div>
-        ${subtaskList}
-      </div>
-      <div class="checklist-row-side">
-        ${isTask ? `<span class="checklist-score">${Math.round(entry.score || 0)}</span>` : `<span class="badge">${escapeHtml(entry.period || entry.sectionLabel || "Checklist")}</span>`}
-        <div class="task-actions compact-actions">
-          ${isTask && !isDone ? `<button class="ghost-button small" data-task-action="today" data-task-id="${entry.id}">Hoje</button>` : ""}
-          <button class="ghost-button small" data-action="open-editor" data-kind="${editKind}" data-id="${entry.id}">Editar</button>
+        <div class="checklist-row-side">
+          ${isTask ? `<span class="checklist-score">${Math.round(entry.score || 0)}</span>` : `<span class="badge">${escapeHtml(entry.period || entry.sectionLabel || "Checklist")}</span>`}
+          <div class="task-actions compact-actions">
+            ${isTask ? `<button class="ghost-button small" data-task-action="${isDone ? "reopen" : "complete"}" data-task-id="${entry.id}">${isDone ? "Reabrir" : "Concluir"}</button>` : ""}
+            ${isTask ? `<button class="ghost-button small" data-task-action="backlog" data-task-id="${entry.id}">Backlog</button>` : ""}
+            ${isTask ? `<button class="ghost-button small" data-task-action="inbox" data-task-id="${entry.id}">Entrada</button>` : ""}
+            <button class="ghost-button small" data-action="open-editor" data-kind="${editKind}" data-id="${entry.id}">Editar</button>
+          </div>
         </div>
-      </div>
-    </article>
-  `;
-}
-
-function renderChecklistQuickAdd(model) {
-  const defaults = model.checklist.quickDefaults || {};
-  return `
-    <section class="checklist-quick-add">
-      <div class="checklist-quick-copy">
-        <span class="page-kicker">Nova tarefa</span>
-        <strong>Adicionar rapido</strong>
-        <p>Capture e execute sem sair da tela operacional.</p>
-      </div>
-      <form class="checklist-quick-form" data-form="checklist-quick-add">
-        <input type="hidden" name="checklistView" value="${escapeHtml(model.checklist.activeView)}" />
-        <input type="hidden" name="selectedDate" value="${escapeHtml(model.selectedDate)}" />
-        <label class="field">
-          <span>Titulo</span>
-          <input name="title" placeholder="Ex: ligar para cliente e fechar documento" required />
-        </label>
-        <div class="field-grid three">
-          <label class="field compact">
-            <span>Area</span>
-            <select name="areaId">
-              ${model.options.areas.map((area) => `<option value="${area.id}" ${defaults.areaId === area.id ? "selected" : ""}>${escapeHtml(area.name)}</option>`).join("")}
-            </select>
-          </label>
-          <label class="field compact">
-            <span>Projeto</span>
-            <select name="projectId">
-              <option value="">Sem projeto</option>
-              ${model.options.projects.map((project) => `<option value="${project.id}" ${defaults.projectId === project.id ? "selected" : ""}>${escapeHtml(project.name)}</option>`).join("")}
-            </select>
-          </label>
-          <label class="field compact">
-            <span>Prazo</span>
-            <input type="date" name="dueDate" value="${model.checklist.activeView === "today" ? escapeHtml(model.selectedDate) : ""}" />
-          </label>
-        </div>
-        <label class="field">
-          <span>Checklist / subtarefas</span>
-          <textarea name="checklist" placeholder="Uma linha por item"></textarea>
-        </label>
-        <div class="toolbar-row">
-          <button class="primary-button" type="submit">Adicionar tarefa</button>
-          <button class="ghost-button" type="button" data-action="navigate" data-section="inbox">Abrir Entrada</button>
-        </div>
-      </form>
-    </section>
-  `;
-}
+      </article>
+    `;
+  }
 
 function renderChecklistPage(model, options = {}) {
   const mainGroups = model.checklist.groups?.length
@@ -609,23 +563,22 @@ function renderChecklistPage(model, options = {}) {
     `${model.checklist.groups.reduce((sum, group) => sum + group.count, 0)} item(ns)`,
     `${model.selectedDay.totalLoad}/${model.selectedDay.totalCapacity} min no dia`,
   ]);
-  const advancedMode = isAdvancedLayoutMode(model, options);
-  const cards = {
-    views: layoutCard("checklist", "views", "Listas e foco operacional", `
-      <div class="checklist-rail-card">
-        <span class="page-kicker">Listas</span>
-        <h3>Execucao rapida</h3>
-        <p>Marque, edite, arraste e reorganize sem sair da tela operacional.</p>
-      </div>
-      <div class="checklist-nav-list">${renderChecklistViewButtons(model, options)}</div>
-      <div class="meta-row">${summaryPills}</div>
-    `, model, { advancedMode }),
-    capture: layoutCard("checklist", "capture", "Nova tarefa operacional", renderChecklistQuickAdd(model), model, { advancedMode }),
-    lists: layoutCard("checklist", "lists", model.checklist.views.find((view) => view.id === model.checklist.activeView)?.label || "Checklist", `
-      <section class="checklist-groups checklist-groups-scroll">
-        ${mainGroups}
-      </section>
-    `, model, { wide: true, advancedMode }),
+    const advancedMode = isAdvancedLayoutMode(model, options);
+    const cards = {
+      views: layoutCard("checklist", "views", "Listas e foco operacional", `
+        <div class="checklist-rail-card">
+          <span class="page-kicker">Listas</span>
+          <h3>Checklist operacional</h3>
+          <p>Use esta barra para trocar a leitura da lista. A maior parte da tela fica dedicada as atividades.</p>
+        </div>
+        <div class="checklist-nav-list">${renderChecklistViewButtons(model, options)}</div>
+        <div class="meta-row">${summaryPills}</div>
+      `, model, { advancedMode }),
+      lists: layoutCard("checklist", "lists", model.checklist.views.find((view) => view.id === model.checklist.activeView)?.label || "Checklist", `
+        <section class="checklist-groups checklist-groups-scroll">
+          ${mainGroups}
+        </section>
+      `, model, { wide: true, advancedMode }),
   };
 
   return renderLayoutPage("checklist", model, cards, options);
@@ -1352,7 +1305,7 @@ function renderPrioritizePage(model, options = {}) {
   return renderLayoutPage("prioritize", model, cards, options);
 }
 
-function renderOrganizePage(model, options = {}) {
+  function renderOrganizePage(model, options = {}) {
   if (options.isMobile) {
     return `
       <section class="organize-mobile-stack">
@@ -1367,22 +1320,22 @@ function renderOrganizePage(model, options = {}) {
     `;
   }
 
-  const cards = {
-    board: layoutCard("organize", "board", "Quadro operacional", `
-      <section class="organize-board">
-        ${model.organize.map((bucket) => `
-          <article class="board-column organize-drop-zone" data-organize-bucket="${bucket.id}">
-            <div class="panel-head">
-              <h3>${escapeHtml(bucket.label)}</h3>
-              ${badge(`${bucket.tasks.length}`)}
-            </div>
-            <p class="muted-copy">Aqui e a decisao final: ajuste bucket, destrinche em checklist e pre-agende antes de mandar para a Agenda.</p>
-            <div class="stack-list compact-stack">
-              ${bucket.tasks.length
-                ? bucket.tasks.map((task) => renderOrganizeTaskCard(task, { buckets: model.options.buckets, periods: model.options.periods })).join("")
-                : emptyState("Sem tarefas nesta coluna.")}
-            </div>
-          </article>
+    const cards = {
+      board: layoutCard("organize", "board", "Quadro operacional", `
+        <section class="organize-board">
+          ${model.organize.map((bucket) => `
+            <article class="board-column organize-drop-zone" data-organize-bucket="${bucket.id}">
+              <div class="panel-head">
+                <h3>${escapeHtml(bucket.label)}</h3>
+                ${badge(`${bucket.tasks.length}`)}
+              </div>
+              <p class="muted-copy">Ajuste bucket, destrinche e pre-agende antes de mandar para a Agenda.</p>
+              <div class="stack-list compact-stack organize-column-scroll">
+                ${bucket.tasks.length
+                  ? bucket.tasks.map((task) => renderOrganizeTaskCard(task, { buckets: model.options.buckets, periods: model.options.periods })).join("")
+                  : emptyState("Sem tarefas nesta coluna.")}
+              </div>
+            </article>
         `).join("")}
       </section>
     `, model, { wide: true, advancedMode: isAdvancedLayoutMode(model, options) }),
@@ -1651,11 +1604,11 @@ function renderAgendaPage(model, options = {}) {
   const advancedMode = isAdvancedLayoutMode(model, options);
   const cards = {
     week: layoutCard("agenda", "week", "Kanban semanal editavel", `
-      <div class="callout success">
-        <strong>Arraste tarefas entre os dias.</strong>
-        <p>O dia da tarefa muda aqui e o resto do sistema acompanha automaticamente: Hoje, Organizar e leitura de carga semanal.</p>
-      </div>
-      <div class="agenda-kanban-grid">
+        <div class="callout success compact-agenda-callout">
+          <strong>Arraste tarefas entre os dias.</strong>
+          <p>O dia da tarefa muda aqui e o resto do sistema acompanha automaticamente: Hoje, Organizar e leitura de carga semanal.</p>
+        </div>
+        <div class="agenda-kanban-grid">
         ${model.agenda.days.map((day) => `
           <article class="calendar-day-column agenda-day-drop-zone" data-agenda-date="${day.date}">
             <div class="calendar-day-head">

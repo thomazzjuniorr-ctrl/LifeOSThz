@@ -398,6 +398,7 @@ export async function loadCloudState(localState) {
 export async function saveCloudState(state) {
   let nextState = withCloudSyncSettings(state);
   const config = getCloudSyncConfig(nextState);
+  let touchedState = null;
 
   if (!hasCloudSyncConfigured(nextState)) {
     return touchState(nextState);
@@ -409,14 +410,15 @@ export async function saveCloudState(state) {
       nextState = mergeWorkspaceStates(nextState, withCloudSyncSettings(remote.state));
     }
 
-    const touchedState = touchState(nextState);
+    touchedState = touchState(nextState);
     await writeRemoteSnapshot(touchedState, config);
     return applySyncMetadata(touchedState, config, {
       lastSyncedAt: new Date().toISOString(),
       lastError: "",
     });
   } catch (error) {
-    return applySyncMetadata(touchedState, config, {
+    const fallbackState = touchedState || touchState(nextState);
+    return applySyncMetadata(fallbackState, config, {
       lastError: error instanceof Error ? error.message : "Falha ao sincronizar com a nuvem.",
     });
   }

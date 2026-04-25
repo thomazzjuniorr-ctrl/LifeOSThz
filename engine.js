@@ -211,10 +211,9 @@ const DEFAULT_LAYOUTS = {
     { id: "alerts", width: "full", height: "regular", frame: null },
   ],
   checklist: [
-    { id: "views", width: "compact", height: "compact", frame: null },
-    { id: "capture", width: "compact", height: "compact", frame: null },
-    { id: "lists", width: "full", height: "tall", frame: null },
-  ],
+      { id: "views", width: "full", height: "compact", frame: null },
+      { id: "lists", width: "full", height: "tall", frame: null },
+    ],
   days: [
     { id: "snapshot", width: "medium", height: "compact", frame: null },
     { id: "periods", width: "full", height: "tall", frame: null },
@@ -2723,34 +2722,36 @@ function buildChecklistDateGroups(tasks, selectedDate) {
 
 function buildChecklistModel(state, openTasks, completedTasks, selectedDate, weekData) {
   const checklistView = state.ui.checklistView || "all";
-  const workTasks = openTasks.filter((task) => task.area?.type === "work");
-  const projectTasks = openTasks.filter((task) => task.projectId);
-  const personalTasks = openTasks.filter((task) => task.area?.type !== "work");
-  const overdueTasks = openTasks.filter((task) => task.isOverdue);
-  const todayTasks = openTasks.filter((task) => task.scheduledDate === selectedDate).sort(sortByChecklistOrder);
-  const nextWeekTasks = openTasks.filter((task) => {
-    const anchorDate = task.scheduledDate || task.dueDate || "";
-    return anchorDate && anchorDate >= selectedDate && anchorDate <= formatISODate(addDays(selectedDate, 7));
-  });
-  const undatedTasks = openTasks.filter((task) => !task.scheduledDate && !task.dueDate);
-  const completedToday = completedTasks.filter((task) => String(task.completedAt || "").slice(0, 10) === selectedDate);
-  const completedBefore = completedTasks.filter((task) => String(task.completedAt || "").slice(0, 10) !== selectedDate);
+  const backlogTasks = openTasks.filter((task) => task.finalBucket === "backlog" || task.location === "backlog");
+  const activeTasks = openTasks.filter((task) => task.finalBucket !== "backlog" && task.location !== "backlog");
+  const workTasks = activeTasks.filter((task) => task.area?.type === "work");
+  const projectTasks = activeTasks.filter((task) => task.projectId);
+  const personalTasks = activeTasks.filter((task) => task.area?.type !== "work");
+  const overdueTasks = activeTasks.filter((task) => task.isOverdue);
+  const todayTasks = activeTasks.filter((task) => task.scheduledDate === selectedDate).sort(sortByChecklistOrder);
+  const nextWeekTasks = activeTasks.filter((task) => {
+      const anchorDate = task.scheduledDate || task.dueDate || "";
+      return anchorDate && anchorDate >= selectedDate && anchorDate <= formatISODate(addDays(selectedDate, 7));
+    });
+    const undatedTasks = activeTasks.filter((task) => !task.scheduledDate && !task.dueDate);
+    const completedToday = completedTasks.filter((task) => String(task.completedAt || "").slice(0, 10) === selectedDate);
+    const completedBefore = completedTasks.filter((task) => String(task.completedAt || "").slice(0, 10) !== selectedDate);
 
   let groups = [];
 
-  if (checklistView === "today") {
-    groups = [
-      makeChecklistGroup("overdue", "Em atraso", overdueTasks.sort(sortByChecklistOrder), "Sem atrasos relevantes."),
-      makeChecklistGroup("today", "Hoje", todayTasks, "Nada marcado para hoje."),
-    ].filter((group) => group.entries.length);
-  } else if (checklistView === "next-7") {
-    groups = buildChecklistDateGroups(openTasks, selectedDate);
-  } else if (checklistView === "no-date") {
-    groups = [makeChecklistGroup("no-date", "Sem data", undatedTasks.sort(sortByChecklistOrder), "Nenhuma tarefa sem data.")];
-  } else if (checklistView === "completed") {
-    groups = [
-      makeChecklistGroup("done-today", "Concluidas hoje", completedToday.sort(sortByChecklistOrder), "Nada concluido hoje."),
-      makeChecklistGroup("done-earlier", "Concluidas antes", completedBefore.sort(sortByChecklistOrder), "Sem historico anterior por enquanto."),
+    if (checklistView === "today") {
+      groups = [
+        makeChecklistGroup("overdue", "Em atraso", overdueTasks.sort(sortByChecklistOrder), "Sem atrasos relevantes."),
+        makeChecklistGroup("today", "Hoje", todayTasks, "Nada marcado para hoje."),
+      ].filter((group) => group.entries.length);
+    } else if (checklistView === "next-7") {
+      groups = buildChecklistDateGroups(activeTasks, selectedDate);
+    } else if (checklistView === "backlog") {
+      groups = [makeChecklistGroup("backlog", "Backlog", backlogTasks.sort(sortByChecklistOrder), "Nenhuma tarefa no backlog.")];
+    } else if (checklistView === "completed") {
+      groups = [
+        makeChecklistGroup("done-today", "Concluidas hoje", completedToday.sort(sortByChecklistOrder), "Nada concluido hoje."),
+        makeChecklistGroup("done-earlier", "Concluidas antes", completedBefore.sort(sortByChecklistOrder), "Sem historico anterior por enquanto."),
     ].filter((group) => group.entries.length);
   } else if (checklistView === "personal") {
     groups = buildTaskTimeGroups(personalTasks, selectedDate);
@@ -2774,17 +2775,18 @@ function buildChecklistModel(state, openTasks, completedTasks, selectedDate, wee
   };
 
   return {
-    activeView: checklistView,
-    views: [
-      { id: "all", label: "Todas", count: openTasks.length },
-      { id: "today", label: "Hoje", count: overdueTasks.length + todayTasks.length },
-      { id: "personal", label: "Pessoal", count: personalTasks.length },
-      { id: "next-7", label: "Proximos 7 dias", count: nextWeekTasks.length },
-      { id: "no-date", label: "Sem data", count: undatedTasks.length },
-      { id: "completed", label: "Concluidas", count: completedTasks.length },
-      { id: "work", label: "Trabalho", count: workTasks.length },
-      { id: "projects", label: "Projetos", count: projectTasks.length },
-    ],
+      activeView: checklistView,
+      views: [
+        { id: "all", label: "Lista", count: activeTasks.length },
+        { id: "today", label: "Foco operacional", count: overdueTasks.length + todayTasks.length },
+        { id: "backlog", label: "Backlog", count: backlogTasks.length },
+        { id: "completed", label: "Concluidas", count: completedTasks.length },
+        { id: "next-7", label: "Proximos 7 dias", count: nextWeekTasks.length },
+        { id: "work", label: "Trabalho", count: workTasks.length },
+        { id: "projects", label: "Projetos", count: projectTasks.length },
+        { id: "personal", label: "Pessoal", count: personalTasks.length },
+        { id: "no-date", label: "Sem data", count: undatedTasks.length },
+      ],
     groups,
     quickDefaults,
     selectedDate,
@@ -3720,9 +3722,10 @@ export function moveTaskToBucket(state, taskId, bucketId) {
     ? "delegated"
     : bucketId === "waiting"
       ? "waiting"
-      : bucketId === "backlog"
-        ? "backlog"
-        : "todo";
+    : bucketId === "backlog"
+      ? "backlog"
+      : "todo";
+  task.updatedAt = nowIso();
   pushHistory(nextState, "organize-bucket", `Tarefa movida para ${bucketId}: ${task.title}`);
   return nextState;
 }
@@ -3738,8 +3741,10 @@ export function reorderChecklistTask(state, taskId, targetTaskId) {
 
   const [moved] = ordered.splice(fromIndex, 1);
   ordered.splice(targetIndex, 0, moved);
+  const timestamp = nowIso();
   ordered.forEach((task, index) => {
     task.checklistOrder = ordered.length - index;
+    task.updatedAt = timestamp;
   });
 
   pushHistory(nextState, "checklist-reorder", `Ordem operacional atualizada: ${moved.title}`);
@@ -4506,6 +4511,7 @@ export function replanWeek(state, referenceDate = getCurrentISODate()) {
   let movedCount = 0;
   let alertCount = 0;
   let reviewCount = 0;
+  const timestamp = nowIso();
 
   nextState.tasks.forEach((task) => {
     if (isOpenTask(task) && task.scheduledDate && differenceInDays(task.scheduledDate, referenceDate) < 0 && !task.critical) {
@@ -4515,6 +4521,7 @@ export function replanWeek(state, referenceDate = getCurrentISODate()) {
       task.scheduledPeriod = slot.period;
       task.location = "scheduled";
       task.manualDecision = false;
+      task.updatedAt = timestamp;
       movedCount += 1;
     }
   });
