@@ -112,14 +112,6 @@ const PAGE_LABELS = {
   settings: "Configuracoes",
 };
 
-const MOBILE_PRIMARY_SECTIONS = [
-  { id: "today", label: "Hoje" },
-  { id: "inbox", label: "Entrada" },
-  { id: "agenda", label: "Agenda" },
-  { id: "checklist", label: "Checklist" },
-  { id: "projects", label: "Projetos" },
-];
-
 const LAYOUT_WIDTH_LABELS = {
   compact: "Estreito",
   medium: "Medio",
@@ -190,6 +182,14 @@ function progressBar(value) {
       <div class="progress-fill" style="width:${Math.max(0, Math.min(100, value))}%"></div>
     </div>
   `;
+}
+
+function usesWeekContext(section = "") {
+  return ["today", "days", "agenda"].includes(section);
+}
+
+function usesHeaderControls(section = "") {
+  return ["today", "checklist", "prioritize", "organize", "areas", "dashboard"].includes(section);
 }
 
 function renderSyncBadge(model) {
@@ -622,7 +622,7 @@ function renderChecklistPage(model, options = {}) {
     `, model, { advancedMode }),
     capture: layoutCard("checklist", "capture", "Nova tarefa operacional", renderChecklistQuickAdd(model), model, { advancedMode }),
     lists: layoutCard("checklist", "lists", model.checklist.views.find((view) => view.id === model.checklist.activeView)?.label || "Checklist", `
-      <section class="checklist-groups">
+      <section class="checklist-groups checklist-groups-scroll">
         ${mainGroups}
       </section>
     `, model, { wide: true, advancedMode }),
@@ -859,7 +859,7 @@ function renderMobileTopbar(model, options = {}) {
           data-action="${options.navOpen ? "close-sidebar" : "toggle-sidebar"}"
           aria-label="${options.navOpen ? "Fechar menu" : "Abrir menu"}"
         >
-          ${options.navOpen ? "Fechar" : "Menu"}
+          ${options.navOpen ? "✕" : "☰"}
         </button>
         <div class="mobile-topbar-copy">
           <span class="page-kicker">${escapeHtml(page.kicker)}</span>
@@ -873,13 +873,6 @@ function renderMobileTopbar(model, options = {}) {
         ${renderSyncBadge(model)}
         <span class="mobile-topbar-date">${escapeHtml(model.selectedDay.longLabel)}</span>
       </div>
-      <div class="mobile-shortcut-strip" role="navigation" aria-label="Atalhos principais mobile">
-        ${MOBILE_PRIMARY_SECTIONS.map((item) => `
-          <button class="mobile-shortcut-button ${model.activeSection === item.id ? "active" : ""}" data-action="navigate" data-section="${item.id}">
-            ${escapeHtml(item.label)}
-          </button>
-        `).join("")}
-      </div>
     </section>
   `;
 }
@@ -889,12 +882,10 @@ function renderSidebar(model, options = {}) {
   const openClass = options.navOpen ? "open" : "";
   return `
     <aside class="workspace-sidebar ${mobileClass} ${openClass}" aria-hidden="${options.navOpen ? "false" : "true"}">
-      ${options.isMobile ? `
-        <div class="mobile-sidebar-head">
-          <span class="page-kicker">Navegacao</span>
-          <button class="ghost-button small" data-action="close-sidebar">Fechar</button>
-        </div>
-      ` : ""}
+      <div class="mobile-sidebar-head">
+        <span class="page-kicker">Navegacao</span>
+        <button class="ghost-button small icon-button" data-action="close-sidebar" aria-label="Fechar menu">✕</button>
+      </div>
       <div class="brand-block">
         <span class="brand-kicker">Life OS Thz 2026</span>
         <h1>Workspace de vida e trabalho</h1>
@@ -965,7 +956,6 @@ function renderFilterGrid(model) {
 function renderHeaderToolbar(model, options = {}) {
   return `
     <div class="toolbar-row ${options.subtle ? "subtle-toolbar" : ""}">
-      <button class="ghost-button" data-action="toggle-sidebar">${model.settings.sidebarCollapsed ? "Menu" : "Sidebar"}</button>
       <button class="ghost-button" data-action="clear-filters">Limpar filtros</button>
       <button class="secondary-button" data-action="replan-week">Reorganizar semana</button>
       <button class="primary-button" data-action="navigate" data-section="inbox">${options.mobileCopy ? "Nova captura" : "Nova captura"}</button>
@@ -976,6 +966,7 @@ function renderHeaderToolbar(model, options = {}) {
 function renderHeader(model, options = {}) {
   const page = PAGE_META[model.activeSection] || PAGE_META.today;
   if (options.isMobile) {
+    const showWeekContext = usesWeekContext(model.activeSection);
     return `
       <section class="workspace-header-card mobile-header-card">
         <div class="mobile-context-row">
@@ -988,21 +979,25 @@ function renderHeader(model, options = {}) {
             ${model.selectedDay.alerts ? badge(`${model.selectedDay.alerts} alerta(s)`, "warning") : badge("Sem alertas", "success")}
           </div>
         </div>
-        ${renderWeekRail(model, options)}
-        <div class="mobile-header-summary">
-          <span>${escapeHtml(model.selectedDay.type.label)}</span>
-          <span>${model.selectedDay.totalLoad}/${model.selectedDay.totalCapacity} min</span>
-          <span>${escapeHtml(model.selectedDay.longLabel)}</span>
-        </div>
-        <div class="toolbar-row mobile-quick-actions">
-          <button class="secondary-button" data-action="replan-week">Reorganizar</button>
-          <button class="ghost-button" data-action="navigate" data-section="agenda">Agenda</button>
-          <button class="ghost-button" data-action="navigate" data-section="prioritize">Priorizar</button>
-        </div>
+        ${showWeekContext ? `
+          ${renderWeekRail(model, options)}
+          <div class="mobile-header-summary">
+            <span>${escapeHtml(model.selectedDay.type.label)}</span>
+            <span>${model.selectedDay.totalLoad}/${model.selectedDay.totalCapacity} min</span>
+            <span>${escapeHtml(model.selectedDay.longLabel)}</span>
+          </div>
+          <div class="toolbar-row mobile-quick-actions">
+            <button class="secondary-button" data-action="replan-week">Reorganizar</button>
+            <button class="ghost-button" data-action="navigate" data-section="agenda">Agenda</button>
+            <button class="ghost-button" data-action="navigate" data-section="prioritize">Priorizar</button>
+          </div>
+        ` : ""}
       </section>
     `;
   }
 
+  const showWeekContext = usesWeekContext(model.activeSection);
+  const showControls = usesHeaderControls(model.activeSection);
   return `
     <section class="workspace-context-stack">
       <article class="workspace-page-card">
@@ -1020,34 +1015,38 @@ function renderHeader(model, options = {}) {
             <p>${escapeHtml(page.text)}</p>
           </div>
           <div class="header-badges">
-            <button class="ghost-button small" data-action="toggle-sidebar">Menu</button>
+            <button class="ghost-button small icon-button" data-action="toggle-sidebar" aria-label="Abrir menu">☰</button>
             ${badge(`Energia ${model.dashboard.energyLabel}`)}
             ${badge(`Metodo ${model.options.methods.find((item) => item.id === model.priorityMethod)?.label || model.priorityMethod}`)}
           </div>
         </div>
       </article>
-      <article class="workspace-week-card">
-        <div class="panel-head">
-          <div>
-            <span class="page-kicker">Semana ativa</span>
-            <h3>${escapeHtml(model.selectedDay.longLabel)}</h3>
-            <p>${escapeHtml(model.selectedDay.type.label)} • ${model.selectedDay.totalLoad}/${model.selectedDay.totalCapacity} min • ${model.selectedDay.alerts} alerta(s)</p>
+      ${showWeekContext ? `
+        <article class="workspace-week-card">
+          <div class="panel-head">
+            <div>
+              <span class="page-kicker">Semana ativa</span>
+              <h3>${escapeHtml(model.selectedDay.longLabel)}</h3>
+              <p>${escapeHtml(model.selectedDay.type.label)} • ${model.selectedDay.totalLoad}/${model.selectedDay.totalCapacity} min • ${model.selectedDay.alerts} alerta(s)</p>
+            </div>
+            <div class="meta-row">
+              ${metaPills([
+                model.dashboard.currentSprint ? `Sprint: ${model.dashboard.currentSprint.title}` : "Sem sprint ativo",
+                `${model.dashboard.weekProgress.percent}% da semana concluida`,
+                `${model.dashboard.daysToMove} dias para mudanca`,
+              ])}
+            </div>
           </div>
-          <div class="meta-row">
-            ${metaPills([
-              model.dashboard.currentSprint ? `Sprint: ${model.dashboard.currentSprint.title}` : "Sem sprint ativo",
-              `${model.dashboard.weekProgress.percent}% da semana concluida`,
-              `${model.dashboard.daysToMove} dias para mudanca`,
-            ])}
-          </div>
-        </div>
-        ${renderWeekRail(model, options)}
-      </article>
-      <article class="workspace-controls-card">
-        ${renderScopeFilters(model)}
-        ${renderFilterGrid(model)}
-        ${renderHeaderToolbar(model, { subtle: true })}
-      </article>
+          ${renderWeekRail(model, options)}
+        </article>
+      ` : ""}
+      ${showControls ? `
+        <article class="workspace-controls-card">
+          ${renderScopeFilters(model)}
+          ${renderFilterGrid(model)}
+          ${renderHeaderToolbar(model, { subtle: true })}
+        </article>
+      ` : ""}
     </section>
   `;
 }
@@ -1480,13 +1479,20 @@ function renderProjectsPage(model, options = {}) {
   const selected = projectView.selected;
   const advancedMode = isAdvancedLayoutMode(model, options);
   const selectorBody = `
-    <div class="project-template-grid">
+    <div class="project-context-head">
+      <div>
+        <span class="page-kicker">Projetos</span>
+        <h3>Escolha o projeto</h3>
+        <p>Use esta faixa para trocar de projeto sem misturar tudo na rolagem da pagina.</p>
+      </div>
+    </div>
+    <div class="project-template-grid project-template-strip">
       ${projectView.templates.map((template) => `<button class="ghost-button" type="button" data-action="create-project-template" data-project-template="${template.id}">${escapeHtml(template.label)}</button>`).join("")}
     </div>
     <p class="muted-copy">Cada template abre um workspace base com blocos sugeridos.</p>
-    <div class="project-selector-list">
+    <div class="project-selector-list project-selector-strip" role="tablist" aria-label="Projetos">
       ${projectView.summaries.map((project) => `
-        <button class="project-selector-card ${project.active ? "active" : ""}" type="button" data-action="select-project" data-project-id="${project.id}">
+        <button class="project-selector-card ${project.active ? "active" : ""}" type="button" data-action="select-project" data-project-id="${project.id}" role="tab" aria-selected="${project.active ? "true" : "false"}">
           <span class="page-kicker">${escapeHtml(project.projectType || "Projeto")}</span>
           <strong>${escapeHtml(project.name)}</strong>
           <p>${escapeHtml(project.summary || "Sem resumo ainda.")}</p>
@@ -1549,8 +1555,10 @@ function renderProjectsPage(model, options = {}) {
       <label class="field"><span>Resumo curto</span><textarea name="summary">${escapeHtml(selected.summary || "")}</textarea></label>
     `, model, { advancedMode }),
     info: layoutCard("projects", "info", "Central de informacoes", `
-      ${renderProjectLinkList(selected.infoLinks, "Sem links principais ainda.")}
-      ${renderProjectLinkList(selected.referenceEntries, "Sem referencias ainda.")}
+      <div class="project-section-scroll">
+        ${renderProjectLinkList(selected.infoLinks, "Sem links principais ainda.")}
+        ${renderProjectLinkList(selected.referenceEntries, "Sem referencias ainda.")}
+      </div>
       <div class="field-grid two">
         <label class="field"><span>Links (um por linha: titulo | url)</span><textarea name="infoLinks" placeholder="Drive | https://...&#10;Notion | https://...">${escapeHtml((selected.infoLinks || []).map((entry) => [entry.label || "", entry.url || ""].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
         <label class="field"><span>Arquivos / referencias (titulo | url)</span><textarea name="referenceEntries" placeholder="Briefing | https://...">${escapeHtml((selected.referenceEntries || []).map((entry) => [entry.label || "", entry.url || ""].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
@@ -1562,19 +1570,19 @@ function renderProjectsPage(model, options = {}) {
       <label class="field"><span>Notas livres</span><textarea name="freeNotes">${escapeHtml(selected.freeNotes || "")}</textarea></label>
     `, model, { advancedMode }),
     okrs: layoutCard("projects", "okrs", "OKRs do projeto", `
-      ${renderProjectOkrs(selected.okrs || [], selected.id)}
+      <div class="project-section-scroll">${renderProjectOkrs(selected.okrs || [], selected.id)}</div>
       <label class="field"><span>Editar OKRs (objetivo | status | progresso | KR1 ; KR2 ; KR3)</span><textarea name="okrs">${escapeHtml((selected.okrs || []).map((entry) => [entry.title || "", entry.status || "active", entry.progress || 0, (entry.keyResults || []).join("; ")].join(" | ")).join("\n"))}</textarea></label>
     `, model, { advancedMode }),
     backlog: layoutCard("projects", "backlog", "Backlog do projeto", `
-      ${renderProjectPlainList(selected.backlogItems || [], "Sem backlog ainda.", { projectId: selected.id, sourceType: "backlog", taskButton: "Gerar tarefa" })}
+      <div class="project-section-scroll">${renderProjectPlainList(selected.backlogItems || [], "Sem backlog ainda.", { projectId: selected.id, sourceType: "backlog", taskButton: "Gerar tarefa" })}</div>
       <label class="field"><span>Backlog (titulo | observacao)</span><textarea name="backlogItems">${escapeHtml((selected.backlogItems || []).map((entry) => [entry.title || "", entry.notes || ""].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
     `, model, { advancedMode }),
     base: layoutCard("projects", "base", "Atividades base", `
-      ${renderProjectPlainList(selected.baseActivities || [], "Sem atividades base ainda.", { projectId: selected.id, sourceType: "base", taskButton: "Virar tarefa" })}
+      <div class="project-section-scroll">${renderProjectPlainList(selected.baseActivities || [], "Sem atividades base ainda.", { projectId: selected.id, sourceType: "base", taskButton: "Virar tarefa" })}</div>
       <label class="field"><span>Atividades base (titulo | item 1 ; item 2 ; item 3)</span><textarea name="baseActivities">${escapeHtml((selected.baseActivities || []).map((entry) => [entry.title || "", (entry.checklist || []).join("; ")].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
     `, model, { advancedMode }),
     action: layoutCard("projects", "action", "Plano de acao", `
-      ${renderProjectPlainList(selected.actionPlan || [], "Sem plano de acao ainda.", { projectId: selected.id, sourceType: "action", taskButton: "Gerar tarefa" })}
+      <div class="project-section-scroll">${renderProjectPlainList(selected.actionPlan || [], "Sem plano de acao ainda.", { projectId: selected.id, sourceType: "action", taskButton: "Gerar tarefa" })}</div>
       <label class="field"><span>Plano de acao (titulo | proxima acao | item 1 ; item 2)</span><textarea name="actionPlan">${escapeHtml((selected.actionPlan || []).map((entry) => [entry.title || "", entry.nextAction || "", (entry.checklist || []).join("; ")].filter(Boolean).join(" | ")).join("\n"))}</textarea></label>
     `, model, { advancedMode }),
     generated: layoutCard("projects", "generated", "Tarefas geradas no sistema", `
@@ -1582,7 +1590,7 @@ function renderProjectsPage(model, options = {}) {
         <strong>Fluxo do projeto</strong>
         <p>Projeto -> gerar tarefas -> Organizar -> Agenda -> Hoje. Nada vem direto para Hoje.</p>
       </div>
-      ${taskList(selected.generatedTasks, { empty: "Nenhuma tarefa gerada ainda para este projeto." })}
+      <div class="project-section-scroll">${taskList(selected.generatedTasks, { empty: "Nenhuma tarefa gerada ainda para este projeto." })}</div>
     `, model, { wide: true, advancedMode }),
   };
 
@@ -1645,6 +1653,7 @@ function renderAgendaPage(model, options = {}) {
         <strong>Arraste tarefas entre os dias.</strong>
         <p>O dia da tarefa muda aqui e o resto do sistema acompanha automaticamente: Hoje, Organizar e leitura de carga semanal.</p>
       </div>
+      <div class="agenda-week-scroll">
       <div class="agenda-kanban-grid">
         ${model.agenda.days.map((day) => `
           <article class="calendar-day-column agenda-day-drop-zone" data-agenda-date="${day.date}">
@@ -1662,6 +1671,7 @@ function renderAgendaPage(model, options = {}) {
             </div>
           </article>
         `).join("")}
+      </div>
       </div>
     `, model, { wide: true, advancedMode }),
     editor: layoutCard("agenda", "editor", "Fila para encaixar e blocos", `

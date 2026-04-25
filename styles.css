@@ -719,6 +719,9 @@ button {
 
 .layout-card > .panel-card {
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
 }
 
 .layout-card.editable {
@@ -753,14 +756,20 @@ button {
 
 .layout-height-compact > .panel-card {
   min-height: 220px;
+  max-height: 320px;
+  overflow: auto;
 }
 
 .layout-height-regular > .panel-card {
   min-height: 300px;
+  max-height: 420px;
+  overflow: auto;
 }
 
 .layout-height-tall > .panel-card {
   min-height: 390px;
+  max-height: 560px;
+  overflow: auto;
 }
 
 .layout-edit-bar {
@@ -2101,6 +2110,27 @@ button {
   gap: 0.7rem;
 }
 
+.project-context-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.project-template-strip,
+.project-selector-strip {
+  flex-direction: row;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.2rem;
+  scrollbar-width: thin;
+}
+
+.project-template-strip > *,
+.project-selector-strip > * {
+  flex: 0 0 auto;
+}
+
 .project-selector-card {
   border: 1px solid rgba(67, 104, 81, 0.12);
   background: rgba(255, 255, 255, 0.92);
@@ -2111,6 +2141,8 @@ button {
   flex-direction: column;
   gap: 0.55rem;
   transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  min-width: 260px;
+  max-width: 320px;
 }
 
 .project-selector-card.active {
@@ -2156,6 +2188,15 @@ button {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 0.85rem;
+}
+
+.project-section-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  max-height: 240px;
+  overflow: auto;
+  padding-right: 0.18rem;
 }
 
 .project-item-card {
@@ -2216,6 +2257,17 @@ button {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
+}
+
+.checklist-groups-scroll {
+  max-height: 68vh;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.checklist-nav-list {
+  max-height: 280px;
+  overflow: auto;
 }
 
 .checklist-nav-button {
@@ -2346,6 +2398,10 @@ button {
   flex-direction: column;
   gap: 0.55rem;
   align-items: flex-end;
+}
+
+.layout-card[data-layout-page="projects"][data-layout-card="selector"] {
+  grid-column: 1 / -1;
 }
 
 .check-toggle {
@@ -2599,11 +2655,32 @@ body {
   box-shadow: 0 22px 48px rgba(24, 41, 30, 0.14);
   backdrop-filter: blur(18px);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   transform: translateX(calc(-100% - 1.2rem));
   opacity: 0;
   pointer-events: none;
   transition: transform 0.22s ease, opacity 0.22s ease;
   z-index: 40;
+}
+
+.workspace-sidebar .mobile-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-bottom: 0.3rem;
+  margin-bottom: 0.2rem;
+  background: linear-gradient(180deg, rgba(247, 251, 247, 0.98), rgba(247, 251, 247, 0.92));
+}
+
+.icon-button {
+  min-width: 2.2rem;
+  justify-content: center;
+  padding-inline: 0.55rem;
 }
 
 .workspace-sidebar.desktop-drawer.open,
@@ -2764,12 +2841,32 @@ body {
 }
 
 .agenda-kanban-grid {
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(220px, 1fr));
   gap: 0.72rem;
+  min-width: 1540px;
+  align-items: start;
 }
 
 .calendar-day-column {
   padding: 0.82rem;
+  max-height: 72vh;
+  overflow: hidden;
+}
+
+.agenda-week-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.2rem;
+}
+
+.agenda-day-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.72rem;
+  max-height: calc(72vh - 84px);
+  overflow-y: auto;
+  padding-right: 0.18rem;
 }
 
 .agenda-kanban-task,
@@ -2863,14 +2960,12 @@ body {
 }
 
 @media (max-width: 1380px) {
-  .agenda-kanban-grid,
   .week-rail {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 1024px) {
-  .agenda-kanban-grid,
   .week-rail {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -2895,10 +2990,27 @@ body {
     width: min(300px, calc(100vw - 1.4rem));
   }
 
-  .agenda-kanban-grid,
   .week-rail,
   .checklist-mobile-rail {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .layout-height-compact > .panel-card,
+  .layout-height-regular > .panel-card,
+  .layout-height-tall > .panel-card {
+    max-height: none;
+  }
+
+  .project-selector-card {
+    min-width: 240px;
+  }
+
+  .calendar-day-column,
+  .agenda-day-stack,
+  .checklist-groups-scroll,
+  .project-section-scroll,
+  .checklist-nav-list {
+    max-height: none;
   }
 
   .layout-grid.layout-grid-freeform {
@@ -2916,10 +3028,13 @@ body {
 }
 
 @media (max-width: 640px) {
-  .agenda-kanban-grid,
   .week-rail,
   .checklist-mobile-rail {
     grid-template-columns: 1fr;
+  }
+
+  .project-selector-card {
+    min-width: 220px;
   }
 }
 
@@ -2982,22 +3097,6 @@ body {
   margin: 0.1rem 0 0;
   font-size: 1rem;
   line-height: 1.15;
-}
-
-.app-shell.mobile-shell .mobile-shortcut-strip {
-  display: flex;
-  gap: 0.55rem;
-  overflow-x: auto;
-  padding-bottom: 0.15rem;
-  scrollbar-width: none;
-}
-
-.app-shell.mobile-shell .mobile-shortcut-strip::-webkit-scrollbar {
-  display: none;
-}
-
-.app-shell.mobile-shell .mobile-shortcut-button {
-  flex: 0 0 auto;
 }
 
 .app-shell.mobile-shell .mobile-context-row {
