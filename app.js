@@ -891,19 +891,21 @@ function renderSidebar(model, options = {}) {
         <h1>Workspace de vida e trabalho</h1>
         <p>Um sistema unico para decidir, executar e reorganizar a semana real.</p>
       </div>
-      ${SECTION_GROUPS.map((group) => `
-        <div class="nav-group">
-          <h2>${escapeHtml(group.label)}</h2>
-          ${group.items.map((item) => `
-            <button class="nav-button ${model.activeSection === item.id ? "active" : ""}" data-action="navigate" data-section="${item.id}">
-              ${escapeHtml(item.label)}
-            </button>
-          `).join("")}
+      <div class="sidebar-scroll-region">
+        ${SECTION_GROUPS.map((group) => `
+          <div class="nav-group">
+            <h2>${escapeHtml(group.label)}</h2>
+            ${group.items.map((item) => `
+              <button class="nav-button ${model.activeSection === item.id ? "active" : ""}" data-action="navigate" data-section="${item.id}">
+                ${escapeHtml(item.label)}
+              </button>
+            `).join("")}
+          </div>
+        `).join("")}
+        <div class="sidebar-footer">
+          <button class="ghost-button full" type="button" data-action="toggle-edit-mode">${model.editMode ? "Sair do modo edicao" : "Entrar no modo edicao"}</button>
+          <button class="ghost-button full" type="button" data-action="reset-app">Resetar base local</button>
         </div>
-      `).join("")}
-      <div class="sidebar-footer">
-        <button class="ghost-button full" type="button" data-action="toggle-edit-mode">${model.editMode ? "Sair do modo edicao" : "Entrar no modo edicao"}</button>
-        <button class="ghost-button full" type="button" data-action="reset-app">Resetar base local</button>
       </div>
     </aside>
   `;
@@ -1653,7 +1655,6 @@ function renderAgendaPage(model, options = {}) {
         <strong>Arraste tarefas entre os dias.</strong>
         <p>O dia da tarefa muda aqui e o resto do sistema acompanha automaticamente: Hoje, Organizar e leitura de carga semanal.</p>
       </div>
-      <div class="agenda-week-scroll">
       <div class="agenda-kanban-grid">
         ${model.agenda.days.map((day) => `
           <article class="calendar-day-column agenda-day-drop-zone" data-agenda-date="${day.date}">
@@ -1671,7 +1672,6 @@ function renderAgendaPage(model, options = {}) {
             </div>
           </article>
         `).join("")}
-      </div>
       </div>
     `, model, { wide: true, advancedMode }),
     editor: layoutCard("agenda", "editor", "Fila para encaixar e blocos", `

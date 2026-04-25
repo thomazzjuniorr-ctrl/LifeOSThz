@@ -3155,3 +3155,244 @@ body {
   }
 }
 
+/* UX refinement: compact top, visible week kanban, self-scrolling sidebar */
+.workspace-root {
+  max-width: min(1700px, 100vw);
+  padding-top: 0.48rem;
+}
+
+.workspace-context-stack {
+  gap: 0.6rem;
+  margin-bottom: 0.72rem;
+}
+
+.workspace-page-card,
+.workspace-week-card,
+.workspace-controls-card,
+.workspace-header-card {
+  padding: 0.72rem 0.88rem;
+}
+
+.workspace-cover-band {
+  min-height: 68px;
+  padding: 0.64rem 0.88rem;
+  align-items: center;
+}
+
+.cover-badge {
+  padding: 0.34rem 0.62rem;
+  font-size: 0.68rem;
+}
+
+.cover-copy strong,
+.cover-title {
+  font-size: clamp(1rem, 1.55vw, 1.4rem);
+  line-height: 1;
+}
+
+.cover-copy {
+  gap: 0.1rem;
+}
+
+.workspace-header-card h2,
+.today-hero h3 {
+  font-size: 1.02rem;
+}
+
+.header-main-row {
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.panel-head {
+  gap: 0.44rem;
+}
+
+.workspace-sidebar.desktop-drawer,
+.workspace-sidebar.mobile-drawer {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - (var(--shell-padding) * 2));
+  max-height: calc(100vh - (var(--shell-padding) * 2));
+  overflow: hidden;
+}
+
+.brand-block,
+.workspace-sidebar .mobile-sidebar-head {
+  flex: 0 0 auto;
+}
+
+.sidebar-scroll-region {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 0.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+}
+
+.layout-card[data-layout-page="agenda"][data-layout-card="week"] > .panel-card,
+.layout-card[data-layout-page="agenda"][data-layout-card="editor"] > .panel-card {
+  overflow: hidden;
+}
+
+.agenda-kanban-grid {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  gap: 0.58rem;
+  overflow-x: visible !important;
+  align-items: start;
+}
+
+.calendar-day-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+  max-height: 69vh;
+  overflow: hidden;
+}
+
+.calendar-day-head,
+.calendar-day-head > * {
+  min-width: 0;
+}
+
+.calendar-day-head strong {
+  font-size: 0.92rem;
+}
+
+.calendar-day-head span {
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agenda-day-stack {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 0.15rem;
+}
+
+.agenda-kanban-task,
+.agenda-block-card {
+  max-width: 100%;
+}
+
+.agenda-kanban-task {
+  padding: 0.78rem;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.agenda-kanban-task strong,
+.agenda-block-card strong {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.agenda-kanban-task .compact-inline-grid {
+  grid-template-columns: 1fr;
+}
+
+.agenda-kanban-task .meta-row,
+.agenda-block-card .meta-row,
+.agenda-kanban-task .toolbar-row {
+  flex-wrap: wrap;
+}
+
+.agenda-drop-tail {
+  flex: 0 0 auto;
+}
+
+.checklist-nav-list {
+  max-height: 280px;
+  overflow: auto;
+}
+
+.checklist-groups-scroll {
+  max-height: 68vh;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.checklist-row {
+  gap: 0.8rem;
+  padding: 0.78rem 0.88rem;
+}
+
+.checklist-row-copy strong {
+  font-size: 0.96rem;
+}
+
+.project-template-strip,
+.project-selector-strip {
+  display: flex;
+  flex-direction: row;
+  gap: 0.78rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.18rem;
+}
+
+.project-template-strip > *,
+.project-selector-strip > * {
+  flex: 0 0 auto;
+}
+
+.project-selector-card {
+  min-width: 250px;
+  max-width: 300px;
+}
+
+.project-section-scroll {
+  max-height: 240px;
+  overflow: auto;
+  padding-right: 0.18rem;
+}
+
+.layout-card[data-layout-page="projects"][data-layout-card="selector"] {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+  .workspace-root {
+    padding-top: 0.4rem;
+  }
+
+  .workspace-page-card,
+  .workspace-week-card,
+  .workspace-controls-card,
+  .workspace-header-card {
+    padding: 0.7rem 0.78rem;
+  }
+
+  .agenda-kanban-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .calendar-day-column,
+  .agenda-day-stack,
+  .checklist-groups-scroll,
+  .project-section-scroll,
+  .checklist-nav-list {
+    max-height: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .agenda-kanban-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
