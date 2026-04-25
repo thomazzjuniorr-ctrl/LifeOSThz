@@ -2721,74 +2721,54 @@ function buildChecklistDateGroups(tasks, selectedDate) {
 }
 
 function buildChecklistModel(state, openTasks, completedTasks, selectedDate, weekData) {
-  const checklistView = state.ui.checklistView || "all";
+  const allowedViews = new Set(["all", "today", "completed", "backlog"]);
+  const checklistView = allowedViews.has(state.ui.checklistView) ? state.ui.checklistView : "all";
   const backlogTasks = openTasks.filter((task) => task.finalBucket === "backlog" || task.location === "backlog");
   const activeTasks = openTasks.filter((task) => task.finalBucket !== "backlog" && task.location !== "backlog");
-  const workTasks = activeTasks.filter((task) => task.area?.type === "work");
-  const projectTasks = activeTasks.filter((task) => task.projectId);
-  const personalTasks = activeTasks.filter((task) => task.area?.type !== "work");
   const overdueTasks = activeTasks.filter((task) => task.isOverdue);
   const todayTasks = activeTasks.filter((task) => task.scheduledDate === selectedDate).sort(sortByChecklistOrder);
-  const nextWeekTasks = activeTasks.filter((task) => {
-      const anchorDate = task.scheduledDate || task.dueDate || "";
-      return anchorDate && anchorDate >= selectedDate && anchorDate <= formatISODate(addDays(selectedDate, 7));
-    });
-    const undatedTasks = activeTasks.filter((task) => !task.scheduledDate && !task.dueDate);
-    const completedToday = completedTasks.filter((task) => String(task.completedAt || "").slice(0, 10) === selectedDate);
-    const completedBefore = completedTasks.filter((task) => String(task.completedAt || "").slice(0, 10) !== selectedDate);
+  const priorityTasks = activeTasks.filter((task) => ["do-now", "priority"].includes(task.finalBucket)).sort(sortByChecklistOrder);
+  const scheduledTasks = activeTasks.filter((task) => task.finalBucket === "schedule").sort(sortByChecklistOrder);
+  const delegatedTasks = activeTasks.filter((task) => task.finalBucket === "delegate" || task.status === "delegated").sort(sortByChecklistOrder);
+  const waitingTasks = activeTasks.filter((task) => task.finalBucket === "waiting" || task.status === "waiting").sort(sortByChecklistOrder);
+  const completedToday = completedTasks.filter((task) => String(task.completedAt || "").slice(0, 10) === selectedDate);
+  const completedBefore = completedTasks.filter((task) => String(task.completedAt || "").slice(0, 10) !== selectedDate);
 
   let groups = [];
 
-    if (checklistView === "today") {
-      groups = [
-        makeChecklistGroup("overdue", "Em atraso", overdueTasks.sort(sortByChecklistOrder), "Sem atrasos relevantes."),
-        makeChecklistGroup("today", "Hoje", todayTasks, "Nada marcado para hoje."),
-      ].filter((group) => group.entries.length);
-    } else if (checklistView === "next-7") {
-      groups = buildChecklistDateGroups(activeTasks, selectedDate);
-    } else if (checklistView === "backlog") {
-      groups = [makeChecklistGroup("backlog", "Backlog", backlogTasks.sort(sortByChecklistOrder), "Nenhuma tarefa no backlog.")];
-    } else if (checklistView === "completed") {
-      groups = [
-        makeChecklistGroup("done-today", "Concluidas hoje", completedToday.sort(sortByChecklistOrder), "Nada concluido hoje."),
-        makeChecklistGroup("done-earlier", "Concluidas antes", completedBefore.sort(sortByChecklistOrder), "Sem historico anterior por enquanto."),
+  if (checklistView === "today") {
+    groups = [
+      makeChecklistGroup("overdue", "Em atraso", overdueTasks.sort(sortByChecklistOrder), "Sem atrasos relevantes."),
+      makeChecklistGroup("today", "Hoje", todayTasks, "Nada marcado para hoje."),
     ].filter((group) => group.entries.length);
-  } else if (checklistView === "personal") {
-    groups = buildTaskTimeGroups(personalTasks, selectedDate);
-  } else if (checklistView === "work") {
-    groups = buildTaskTimeGroups(workTasks, selectedDate);
-  } else if (checklistView === "projects") {
-    groups = state.projects
-      .map((project) => makeChecklistGroup(project.id, project.name, projectTasks.filter((task) => task.projectId === project.id).sort(sortByChecklistOrder), `Sem tarefas em ${project.name}.`))
-      .filter((group) => group.entries.length);
+  } else if (checklistView === "completed") {
+    groups = [
+      makeChecklistGroup("done-today", "Concluidas hoje", completedToday.sort(sortByChecklistOrder), "Nada concluido hoje."),
+      makeChecklistGroup("done-earlier", "Concluidas antes", completedBefore.sort(sortByChecklistOrder), "Sem historico anterior por enquanto."),
+    ].filter((group) => group.entries.length);
+  } else if (checklistView === "backlog") {
+    groups = [
+      makeChecklistGroup("backlog", "Backlog", backlogTasks.sort(sortByChecklistOrder), "Nenhuma tarefa no backlog."),
+    ];
   } else {
-    groups = buildTaskTimeGroups(openTasks, selectedDate);
+    groups = [
+      makeChecklistGroup("today", "Hoje", todayTasks, "Nada marcado para hoje."),
+      makeChecklistGroup("priority", "Prioridade", priorityTasks, "Sem tarefas em prioridade."),
+      makeChecklistGroup("schedule", "Agendar", scheduledTasks, "Nada aguardando agendamento."),
+      makeChecklistGroup("delegate", "Delegar", delegatedTasks, "Nada em delegacao."),
+      makeChecklistGroup("waiting", "Aguardar", waitingTasks, "Nada aguardando retorno."),
+    ].filter((group) => group.entries.length);
   }
 
-  const quickDefaults = {
-    areaId: checklistView === "work" || checklistView === "projects"
-      ? "area-work"
-      : checklistView === "personal"
-        ? "area-personal"
-        : state.areas[0]?.id || "",
-    projectId: checklistView === "projects" ? state.projects[0]?.id || "" : "",
-  };
-
   return {
-      activeView: checklistView,
-      views: [
-        { id: "all", label: "Lista", count: activeTasks.length },
-        { id: "today", label: "Foco operacional", count: overdueTasks.length + todayTasks.length },
-        { id: "backlog", label: "Backlog", count: backlogTasks.length },
-        { id: "completed", label: "Concluidas", count: completedTasks.length },
-        { id: "next-7", label: "Proximos 7 dias", count: nextWeekTasks.length },
-        { id: "work", label: "Trabalho", count: workTasks.length },
-        { id: "projects", label: "Projetos", count: projectTasks.length },
-        { id: "personal", label: "Pessoal", count: personalTasks.length },
-        { id: "no-date", label: "Sem data", count: undatedTasks.length },
-      ],
+    activeView: checklistView,
+    views: [
+      { id: "all", label: "Lista", count: activeTasks.length },
+      { id: "today", label: "Foco operacional", count: overdueTasks.length + todayTasks.length },
+      { id: "completed", label: "Concluidas", count: completedTasks.length },
+      { id: "backlog", label: "Backlog", count: backlogTasks.length },
+    ],
     groups,
-    quickDefaults,
     selectedDate,
     weekDates: weekData.dates,
   };

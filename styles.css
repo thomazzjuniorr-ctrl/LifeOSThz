@@ -3407,7 +3407,7 @@ body {
 }
 
 .organize-board {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.8rem;
   overflow: hidden;
 }
@@ -3417,21 +3417,18 @@ body {
   flex-direction: column;
   gap: 0.65rem;
   min-width: 0;
-  max-height: 72vh;
-  overflow: hidden;
+  max-height: none;
+  overflow: visible;
 }
 
 .organize-column-scroll {
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 0.15rem;
 }
 
 .organize-task-card {
   max-width: 100%;
-  overflow: auto;
+  overflow: visible;
 }
 
 .checklist-nav-list {
@@ -3452,7 +3449,7 @@ body {
 }
 
 .checklist-groups-scroll {
-  max-height: 72vh;
+  max-height: none;
 }
 
 .checklist-group {
@@ -3462,10 +3459,8 @@ body {
 }
 
 .checklist-group-body {
-  max-height: calc(72vh - 84px);
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 0.12rem;
+  max-height: none;
+  overflow: visible;
 }
 
 .checklist-row {
@@ -3498,6 +3493,103 @@ body {
   gap: 0.32rem;
 }
 
+.stack-list.is-scrollable,
+.organize-column-scroll.is-scrollable,
+.agenda-day-stack.is-scrollable,
+.checklist-group-body.is-scrollable {
+  max-height: 72vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 0.14rem;
+}
+
+.board-column.is-scrollable,
+.calendar-day-column.is-scrollable {
+  max-height: 72vh;
+  overflow: hidden;
+}
+
+.activity-card {
+  cursor: pointer;
+}
+
+.activity-card-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.72rem;
+}
+
+.activity-card-copy {
+  min-width: 0;
+}
+
+.activity-card-title {
+  margin: 0;
+  font-size: 0.97rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.activity-card .task-actions.compact-actions,
+.checklist-row .task-actions.compact-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.38rem;
+}
+
+.task-card.activity-card,
+.agenda-kanban-task.activity-card,
+.organize-task-card.activity-card,
+.checklist-row {
+  min-height: 0;
+}
+
+.task-card.activity-card p,
+.agenda-kanban-task.activity-card p,
+.organize-task-card.activity-card p {
+  display: none;
+}
+
+.agenda-kanban-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.82rem;
+}
+
+.agenda-day-stack {
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+}
+
+.agenda-kanban-task {
+  padding: 0.74rem 0.8rem;
+  max-height: none;
+  overflow: visible;
+}
+
+.agenda-kanban-task .task-actions.compact-actions,
+.organize-task-card .task-actions.compact-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.agenda-block-card {
+  overflow: visible;
+}
+
+.checklist-row-copy p,
+.checklist-score,
+.checklist-subtasks {
+  display: none;
+}
+
+.checklist-row .check-toggle,
+.agenda-kanban-task .check-toggle {
+  flex: 0 0 auto;
+}
+
 @media (max-width: 900px) {
   .workspace-root {
     padding-top: 0.4rem;
@@ -3515,7 +3607,7 @@ body {
   }
 
   .organize-board {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .board-column,
@@ -3535,6 +3627,10 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .activity-card-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
   .checklist-row .task-actions.compact-actions {
     justify-content: flex-start;
   }
@@ -3542,6 +3638,10 @@ body {
 
 @media (max-width: 640px) {
   .agenda-kanban-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .organize-board {
     grid-template-columns: 1fr;
   }
 }

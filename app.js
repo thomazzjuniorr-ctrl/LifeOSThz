@@ -277,44 +277,45 @@ function taskActions(task, mode = "default") {
   return `<div class="task-actions">${buttons.join("")}</div>`;
 }
 
-function taskCard(task, options = {}) {
-  const headerPills = metaPills([
-    task.areaName,
-    task.projectName || "",
-    task.periodLabel,
-    task.dayTypeLabel,
-  ]);
-  const reasonLine = task.reasons?.length ? `<p class="reason-line">${escapeHtml(task.reasons.join(" | "))}</p>` : "";
-  const subtaskList = task.subtasks?.length
-    ? `<ul class="mini-list">${task.subtasks.slice(0, 3).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
-    : "";
-  return `
-    <article class="task-card ${options.emphasis ? "emphasis" : ""}">
-      <div class="task-card-top">
-        <div>
-          <div class="meta-row">${headerPills}</div>
-          <h4>${escapeHtml(task.title)}</h4>
-          <p>${escapeHtml(task.gtdDecision)}${task.frogLabel ? ` • ${escapeHtml(task.frogLabel)}` : ""}</p>
-        </div>
-        ${badge(`Score ${Math.round(task.score)}`, task.critical ? "danger" : "")}
-      </div>
-      ${task.nextAction ? `<p class="next-action"><strong>Proxima acao:</strong> ${escapeHtml(task.nextAction)}</p>` : ""}
-      ${subtaskList}
-      ${reasonLine}
-      ${task.suggestions?.length ? `<div class="meta-row">${metaPills(task.suggestions)}</div>` : ""}
-      ${task.notes ? `<p class="muted-copy">${escapeHtml(task.notes)}</p>` : ""}
-      ${taskActions(task, options.mode)}
-    </article>
-  `;
-}
+function renderMinimalTaskActions(task, options = {}) {
+  const mode = options.mode || "default";
+  const buttons = [];
 
-function taskList(tasks, options = {}) {
-  if (!tasks?.length) {
-    return emptyState(options.empty || "Nada por aqui.");
+  if (!task.isTemplate) {
+    if (mode === "alert") {
+      buttons.push(`<button class="ghost-button small" data-task-action="resolve-now" data-task-id="${task.id}">Resolver</button>`);
+      buttons.push(`<button class="ghost-button small" data-task-action="auto-defer" data-task-id="${task.id}">Agendar</button>`);
+    } else if (task.status !== "done") {
+      buttons.push(`<button class="ghost-button small" data-task-action="complete" data-task-id="${task.id}">Concluir</button>`);
+    } else {
+      buttons.push(`<button class="ghost-button small" data-task-action="reopen" data-task-id="${task.id}">Reabrir</button>`);
+    }
   }
 
-  return `<div class="stack-list">${tasks.map((task) => taskCard(task, options)).join("")}</div>`;
+  buttons.push(`<button class="ghost-button small" data-action="open-editor" data-kind="task" data-id="${task.id}">Detalhes</button>`);
+  return `<div class="task-actions compact-actions">${buttons.join("")}</div>`;
 }
+
+function taskCard(task, options = {}) {
+    return `
+      <article class="task-card activity-card ${options.emphasis ? "emphasis" : ""}" data-action="open-editor" data-kind="task" data-id="${task.id}">
+        <div class="activity-card-row">
+          <div class="activity-card-copy">
+            <h4 class="activity-card-title">${escapeHtml(task.title)}</h4>
+          </div>
+          ${renderMinimalTaskActions(task, options)}
+        </div>
+      </article>
+    `;
+  }
+
+function taskList(tasks, options = {}) {
+    if (!tasks?.length) {
+      return emptyState(options.empty || "Nada por aqui.");
+    }
+
+    return `<div class="stack-list ${tasks.length > 10 ? "is-scrollable" : ""}">${tasks.map((task) => taskCard(task, options)).join("")}</div>`;
+  }
 
 function panel(title, body, options = {}) {
   return `
@@ -431,24 +432,23 @@ function renderChecklistItems(items, _selectedDate) {
   }
 
   return `
-    <div class="stack-list compact-stack">
-      ${items.map((item) => {
-        const supportToggle = getChecklistToggleMeta(item);
-        const action = supportToggle
-          ? `<button class="tiny-button ${item.done ? "ghost" : ""}" data-action="${supportToggle.action}" ${supportToggle.attr}="${item.id}" data-date="${_selectedDate}" aria-label="${item.done ? "Desmarcar" : "Marcar"} ${supportToggle.label} ${escapeHtml(item.title)}">${item.done ? "Feito" : "Marcar"}</button>`
-          : `<button class="tiny-button ${item.done ? "ghost" : ""}" data-task-action="${item.done ? "reopen" : "complete"}" data-task-id="${item.id}" aria-label="${item.done ? "Reabrir" : "Concluir"} tarefa ${escapeHtml(item.title)}">${item.done ? "Reabrir" : "Concluir"}</button>`;
+      <div class="stack-list compact-stack">
+        ${items.map((item) => {
+          const supportToggle = getChecklistToggleMeta(item);
+          const action = supportToggle
+            ? `<button class="tiny-button ${item.done ? "ghost" : ""}" data-action="${supportToggle.action}" ${supportToggle.attr}="${item.id}" data-date="${_selectedDate}" aria-label="${item.done ? "Desmarcar" : "Marcar"} ${supportToggle.label} ${escapeHtml(item.title)}">${item.done ? "Feito" : "Marcar"}</button>`
+            : `<button class="tiny-button ${item.done ? "ghost" : ""}" data-task-action="${item.done ? "reopen" : "complete"}" data-task-id="${item.id}" aria-label="${item.done ? "Reabrir" : "Concluir"} tarefa ${escapeHtml(item.title)}">${item.done ? "Reabrir" : "Concluir"}</button>`;
 
-        return `
-          <article class="checklist-card ${item.done ? "done" : ""}">
-            <div>
-              <strong>${escapeHtml(item.title)}</strong>
-              <p>${escapeHtml(item.period)}${item.note ? ` • ${escapeHtml(item.note)}` : ""}${item.areaName ? ` • ${escapeHtml(item.areaName)}` : ""}</p>
-            </div>
-            ${action}
-          </article>
-        `;
-      }).join("")}
-    </div>
+          return `
+            <article class="checklist-card ${item.done ? "done" : ""}">
+              <div>
+                <strong>${escapeHtml(item.title)}</strong>
+              </div>
+              ${action}
+            </article>
+          `;
+        }).join("")}
+      </div>
   `;
 }
 
@@ -477,65 +477,30 @@ function renderChecklistRow(entry) {
   const toggleLabel = isTask
     ? `${isDone ? "Reabrir" : "Concluir"} tarefa ${entry.title}`
     : `${isDone ? "Desmarcar" : "Marcar"} ${entry.title}`;
-  const subtaskList = isTask && entry.subtasks?.length
-    ? `
-      <div class="checklist-subtasks">
-        ${entry.subtasks.map((subtask, index) => {
-          const checked = (entry.completedSubtasks || []).includes(index);
-          return `
-            <button
-              class="checklist-subtask-chip ${checked ? "done" : ""}"
-              data-action="toggle-task-subtask"
-              data-task-id="${entry.id}"
-              data-subtask-index="${index}"
-              aria-label="${checked ? "Desmarcar" : "Marcar"} subtarefa ${escapeHtml(subtask)}"
-            >
-              <span>${checked ? "OK" : "..."}</span>
-              <small>${escapeHtml(subtask)}</small>
-            </button>
-          `;
-        }).join("")}
-      </div>
-    `
-    : "";
-  const meta = isTask
-    ? metaPills([
-      entry.areaName,
-      entry.projectName || "",
-      entry.priority ? `Prioridade ${entry.priority}` : "",
-      entry.dueLabel ? `Prazo ${entry.dueLabel}` : "",
-    ])
-    : metaPills([
-      entry.areaName || "",
-      entry.sectionLabel || "",
-      entry.period || "",
-    ]);
-  const editKind = "task";
+    const editKind = "task";
 
-  return `
-    <article
-      class="checklist-row ${isDone ? "done" : ""} ${isTask ? "task" : "support"}"
-      ${isTask && !isDone ? 'draggable="true"' : ""}
-      ${isTask && !isDone ? `data-checklist-task="${entry.id}" data-checklist-drop-task="${entry.id}"` : ""}
-    >
-      ${isTask
-        ? `<button class="check-toggle ${isDone ? "done" : ""}" ${doneAction} aria-label="${escapeHtml(toggleLabel)}">${isDone ? "OK" : ""}</button>`
-        : (buildChecklistToggleButton({ ...entry, done: isDone }, entry.scheduledDate) || `<span class="check-toggle static"></span>`)}
+    return `
+      <article
+        class="checklist-row ${isDone ? "done" : ""} ${isTask ? "task" : "support"}"
+        data-action="${isTask ? "open-editor" : ""}"
+        data-kind="${isTask ? editKind : ""}"
+        data-id="${isTask ? entry.id : ""}"
+        ${isTask && !isDone ? 'draggable="true"' : ""}
+        ${isTask && !isDone ? `data-checklist-task="${entry.id}" data-checklist-drop-task="${entry.id}"` : ""}
+      >
+        ${isTask
+          ? `<button class="check-toggle ${isDone ? "done" : ""}" ${doneAction} aria-label="${escapeHtml(toggleLabel)}">${isDone ? "OK" : ""}</button>`
+          : (buildChecklistToggleButton({ ...entry, done: isDone }, entry.scheduledDate) || `<span class="check-toggle static"></span>`)}
         <div class="checklist-row-main">
           <div class="checklist-row-copy">
             <strong>${escapeHtml(entry.title)}</strong>
-            ${meta ? `<div class="meta-row">${meta}</div>` : ""}
-            ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}
           </div>
-          ${subtaskList}
         </div>
         <div class="checklist-row-side">
-          ${isTask ? `<span class="checklist-score">${Math.round(entry.score || 0)}</span>` : `<span class="badge">${escapeHtml(entry.period || entry.sectionLabel || "Checklist")}</span>`}
           <div class="task-actions compact-actions">
-            ${isTask ? `<button class="ghost-button small" data-task-action="${isDone ? "reopen" : "complete"}" data-task-id="${entry.id}">${isDone ? "Reabrir" : "Concluir"}</button>` : ""}
-            ${isTask ? `<button class="ghost-button small" data-task-action="backlog" data-task-id="${entry.id}">Backlog</button>` : ""}
-            ${isTask ? `<button class="ghost-button small" data-task-action="inbox" data-task-id="${entry.id}">Entrada</button>` : ""}
-            <button class="ghost-button small" data-action="open-editor" data-kind="${editKind}" data-id="${entry.id}">Editar</button>
+            ${isTask ? `<button class="ghost-button small" data-task-action="inbox" data-task-id="${entry.id}">Mover</button>` : ""}
+            ${isTask ? `<button class="ghost-button small" data-task-action="backlog" data-task-id="${entry.id}">Excluir</button>` : ""}
+            ${isTask ? `<button class="ghost-button small" data-action="open-editor" data-kind="${editKind}" data-id="${entry.id}">Detalhes</button>` : ""}
           </div>
         </div>
       </article>
@@ -543,19 +508,19 @@ function renderChecklistRow(entry) {
   }
 
 function renderChecklistPage(model, options = {}) {
-  const mainGroups = model.checklist.groups?.length
-    ? model.checklist.groups.map((group) => `
-        <section class="checklist-group">
-          <div class="checklist-group-head">
-            <h3>${escapeHtml(group.label)}</h3>
-            ${badge(`${group.count}`)}
-          </div>
-          <div class="checklist-group-body">
-            ${group.entries.length
-              ? group.entries.map((entry) => renderChecklistRow(entry)).join("")
-              : emptyState(group.emptyMessage || "Sem itens nesta lista.")}
-          </div>
-        </section>
+    const mainGroups = model.checklist.groups?.length
+      ? model.checklist.groups.map((group) => `
+          <section class="checklist-group">
+            <div class="checklist-group-head">
+              <h3>${escapeHtml(group.label)}</h3>
+              ${badge(`${group.count}`)}
+            </div>
+            <div class="checklist-group-body ${group.entries.length > 10 ? "is-scrollable" : ""}">
+              ${group.entries.length
+                ? group.entries.map((entry) => renderChecklistRow(entry)).join("")
+                : emptyState(group.emptyMessage || "Sem itens nesta lista.")}
+            </div>
+          </section>
       `).join("")
     : emptyState("Nada para executar nesta lista agora.");
   const summaryPills = metaPills([
@@ -579,55 +544,25 @@ function renderChecklistPage(model, options = {}) {
           ${mainGroups}
         </section>
       `, model, { wide: true, advancedMode }),
-  };
+    };
 
   return renderLayoutPage("checklist", model, cards, options);
 }
 
 function renderOrganizeTaskCard(task, options = {}) {
-  const periodOptions = options.periods?.map((period) => `<option value="${period.id}" ${task.scheduledPeriod === period.id ? "selected" : ""}>${escapeHtml(period.label)}</option>`).join("") || "";
-  return `
-    <article class="task-card organize-task-card" draggable="true" data-organize-task="${task.id}">
-      <div class="task-card-top">
-        <div>
-          <div class="meta-row">${metaPills([task.areaName, task.projectName || "", task.gtdDecision, `Score ${Math.round(task.score)}`])}</div>
-          <h4>${escapeHtml(task.title)}</h4>
-          <p>${escapeHtml(task.nextAction || "Sem proxima acao clara ainda.")}</p>
+    return `
+      <article class="task-card organize-task-card activity-card" draggable="true" data-organize-task="${task.id}" data-action="open-editor" data-kind="task" data-id="${task.id}">
+        <div class="activity-card-row">
+          <div class="activity-card-copy">
+            <h4 class="activity-card-title">${escapeHtml(task.title)}</h4>
+          </div>
+          <div class="task-actions compact-actions">
+            <button class="ghost-button small" data-action="open-editor" data-kind="task" data-id="${task.id}">Detalhes</button>
+          </div>
         </div>
-      </div>
-      ${task.suggestions?.length ? `<div class="meta-row">${metaPills(task.suggestions)}</div>` : ""}
-      <div class="organize-decision-grid">
-        <label class="field compact">
-          <span>Dia</span>
-          <input type="date" value="${escapeHtml(task.scheduledDate || "")}" data-organize-task-id="${task.id}" data-organize-field="scheduledDate" />
-        </label>
-        <label class="field compact">
-          <span>Periodo</span>
-          <select data-organize-task-id="${task.id}" data-organize-field="scheduledPeriod">
-            ${periodOptions}
-          </select>
-        </label>
-      </div>
-      <div class="bucket-move-grid">
-        ${options.buckets.map((bucket) => `
-          <button
-            class="bucket-move-button ${task.finalBucket === bucket.id ? "active" : ""}"
-            data-action="move-task-bucket"
-            data-task-id="${task.id}"
-            data-bucket-id="${bucket.id}"
-          >
-            ${escapeHtml(bucket.label)}
-          </button>
-        `).join("")}
-      </div>
-      <div class="toolbar-row">
-        <button class="ghost-button small" data-task-action="today" data-task-id="${task.id}">Hoje</button>
-        <button class="ghost-button small" data-task-action="reprocess" data-task-id="${task.id}">Reprocessar</button>
-        <button class="ghost-button small" data-action="open-editor" data-kind="task" data-id="${task.id}">Destrinchar</button>
-      </div>
-    </article>
-  `;
-}
+      </article>
+    `;
+  }
 
 function renderAutoPilotList(autoPilot = []) {
   if (!autoPilot.length) {
@@ -658,53 +593,35 @@ function renderAutoPilotList(autoPilot = []) {
 }
 
 function renderAgendaKanbanTask(task, model) {
-  return `
-    <article class="agenda-kanban-task" draggable="true" data-agenda-task="${task.id}" data-agenda-drop-task="${task.id}" data-agenda-drop-date="${task.scheduledDate || ""}">
-      <div class="task-card-top">
-        <div>
-          <strong>${escapeHtml(task.title)}</strong>
-          <p>${escapeHtml(task.areaName)}${task.projectName ? ` • ${escapeHtml(task.projectName)}` : ""}</p>
+    return `
+      <article class="agenda-kanban-task activity-card" draggable="true" data-agenda-task="${task.id}" data-agenda-drop-task="${task.id}" data-agenda-drop-date="${task.scheduledDate || ""}" data-action="open-editor" data-kind="task" data-id="${task.id}">
+        <div class="activity-card-row">
+          <button class="check-toggle ${task.status === "done" ? "done" : ""}" data-task-action="${task.status === "done" ? "reopen" : "complete"}" data-task-id="${task.id}" aria-label="${escapeHtml(`${task.status === "done" ? "Reabrir" : "Concluir"} tarefa ${task.title}`)}">${task.status === "done" ? "OK" : ""}</button>
+          <div class="activity-card-copy">
+            <strong class="activity-card-title">${escapeHtml(task.title)}</strong>
+          </div>
+          <div class="task-actions compact-actions">
+            <button class="ghost-button small" data-action="open-editor" data-kind="task" data-id="${task.id}">Detalhes</button>
+          </div>
         </div>
-        ${badge(task.priority ? `P ${task.priority}` : `Score ${Math.round(task.score || 0)}`)}
-      </div>
-      <div class="meta-row">${metaPills([task.periodLabel || "", task.dueLabel ? `Prazo ${task.dueLabel}` : "", `${task.estimatedMinutes} min`])}</div>
-      <div class="agenda-drop-hint">Arraste entre os dias ou solte sobre outro card para reordenar.</div>
-      <div class="field-grid two compact-inline-grid">
-        <label class="field compact">
-          <span>Dia</span>
-          <select data-agenda-task-id="${task.id}" data-agenda-field="scheduledDate">
-            ${model.agenda.days.map((day) => `<option value="${day.date}" ${task.scheduledDate === day.date ? "selected" : ""}>${escapeHtml(day.weekdayLabel)}</option>`).join("")}
-          </select>
-        </label>
-        <label class="field compact">
-          <span>Periodo</span>
-          <select data-agenda-task-id="${task.id}" data-agenda-field="scheduledPeriod">
-            ${model.options.periods.map((period) => `<option value="${period.id}" ${task.scheduledPeriod === period.id ? "selected" : ""}>${escapeHtml(period.label)}</option>`).join("")}
-          </select>
-        </label>
-      </div>
-      <div class="toolbar-row">
-        <button class="ghost-button small" data-action="open-editor" data-kind="task" data-id="${task.id}">Editar</button>
-        <button class="ghost-button small" data-task-action="today" data-task-id="${task.id}">Hoje</button>
-      </div>
-    </article>
-  `;
-}
+      </article>
+    `;
+  }
 
 function renderAgendaBlockCard(block) {
-  return `
-    <article class="agenda-block-card">
-      <div class="task-card-top">
-        <div>
-          <strong>${escapeHtml(block.title)}</strong>
-          <p>Bloco interno • ${escapeHtml(block.period)}</p>
+    return `
+      <article class="agenda-block-card activity-card" data-action="open-editor" data-kind="block" data-id="${block.id}">
+        <div class="activity-card-row">
+          <div class="activity-card-copy">
+            <strong class="activity-card-title">${escapeHtml(block.title)}</strong>
+          </div>
+          <div class="task-actions compact-actions">
+            <button class="ghost-button small" data-action="open-editor" data-kind="block" data-id="${block.id}">Detalhes</button>
+          </div>
         </div>
-        ${badge("Bloco")}
-      </div>
-      <div class="meta-row">${metaPills([`${block.startTime} - ${block.endTime}`, block.note || "Sem nota"])}</div>
-    </article>
-  `;
-}
+      </article>
+    `;
+  }
 
 function renderAgendaBlockEditor(blocks, model) {
   if (!blocks?.length) {
@@ -1305,7 +1222,7 @@ function renderPrioritizePage(model, options = {}) {
   return renderLayoutPage("prioritize", model, cards, options);
 }
 
-  function renderOrganizePage(model, options = {}) {
+function renderOrganizePage(model, options = {}) {
   if (options.isMobile) {
     return `
       <section class="organize-mobile-stack">
@@ -1324,13 +1241,13 @@ function renderPrioritizePage(model, options = {}) {
       board: layoutCard("organize", "board", "Quadro operacional", `
         <section class="organize-board">
           ${model.organize.map((bucket) => `
-            <article class="board-column organize-drop-zone" data-organize-bucket="${bucket.id}">
+            <article class="board-column organize-drop-zone ${bucket.tasks.length > 10 ? "is-scrollable" : ""}" data-organize-bucket="${bucket.id}">
               <div class="panel-head">
                 <h3>${escapeHtml(bucket.label)}</h3>
                 ${badge(`${bucket.tasks.length}`)}
               </div>
               <p class="muted-copy">Ajuste bucket, destrinche e pre-agende antes de mandar para a Agenda.</p>
-              <div class="stack-list compact-stack organize-column-scroll">
+              <div class="stack-list compact-stack organize-column-scroll ${bucket.tasks.length > 10 ? "is-scrollable" : ""}">
                 ${bucket.tasks.length
                   ? bucket.tasks.map((task) => renderOrganizeTaskCard(task, { buckets: model.options.buckets, periods: model.options.periods })).join("")
                   : emptyState("Sem tarefas nesta coluna.")}
@@ -1400,15 +1317,11 @@ function renderProjectPlainList(entries = [], emptyMessage, options = {}) {
   }
 
   return `<div class="project-rich-list">${entries.map((entry) => `
-    <article class="project-item-card">
-      <strong>${escapeHtml(entry.title || entry)}</strong>
-      ${entry.notes ? `<p class="muted-copy">${escapeHtml(entry.notes)}</p>` : ""}
-      ${entry.nextAction ? `<p class="muted-copy">Proxima acao: ${escapeHtml(entry.nextAction)}</p>` : ""}
-      ${entry.checklist?.length ? `<p class="muted-copy">Checklist: ${escapeHtml(entry.checklist.join(" • "))}</p>` : ""}
-      ${entry.keyResults?.length ? `<p class="muted-copy">KRs: ${escapeHtml(entry.keyResults.join(" • "))}</p>` : ""}
-      ${options.taskButton ? `<div class="toolbar-row"><button class="ghost-button" type="button" data-action="generate-project-task" data-project-id="${options.projectId}" data-project-source="${options.sourceType}" data-project-entry="${entry.id}">${escapeHtml(options.taskButton)}</button></div>` : ""}
-    </article>
-  `).join("")}</div>`;
+      <article class="project-item-card">
+        <strong>${escapeHtml(entry.title || entry)}</strong>
+        ${options.taskButton ? `<div class="toolbar-row"><button class="ghost-button" type="button" data-action="generate-project-task" data-project-id="${options.projectId}" data-project-source="${options.sourceType}" data-project-entry="${entry.id}">${escapeHtml(options.taskButton)}</button></div>` : ""}
+      </article>
+    `).join("")}</div>`;
 }
 
 function renderProjectOkrs(entries = [], projectId) {
@@ -1417,16 +1330,11 @@ function renderProjectOkrs(entries = [], projectId) {
   }
 
   return `<div class="project-rich-list project-okr-list">${entries.map((okr) => `
-    <article class="project-item-card project-okr-card">
-      <div class="task-card-top">
+      <article class="project-item-card project-okr-card">
         <strong>${escapeHtml(okr.title)}</strong>
-        ${badge(`${okr.progress}%`, okr.progress >= 70 ? "success" : okr.progress >= 40 ? "" : "warning")}
-      </div>
-      <div class="meta-row">${metaPills([okr.status || "active", `${(okr.keyResults || []).length} KR(s)`])}</div>
-      ${(okr.keyResults || []).length ? `<p class="muted-copy">${escapeHtml(okr.keyResults.join(" • "))}</p>` : ""}
-      <div class="toolbar-row"><button class="ghost-button" type="button" data-action="generate-project-task" data-project-id="${projectId}" data-project-source="okr" data-project-entry="${okr.id}">Gerar acao</button></div>
-    </article>
-  `).join("")}</div>`;
+        <div class="toolbar-row"><button class="ghost-button" type="button" data-action="generate-project-task" data-project-id="${projectId}" data-project-source="okr" data-project-entry="${okr.id}">Gerar acao</button></div>
+      </article>
+    `).join("")}</div>`;
 }
 
 function renderProjectsPage(model, options = {}) {
@@ -1609,24 +1517,27 @@ function renderAgendaPage(model, options = {}) {
           <p>O dia da tarefa muda aqui e o resto do sistema acompanha automaticamente: Hoje, Organizar e leitura de carga semanal.</p>
         </div>
         <div class="agenda-kanban-grid">
-        ${model.agenda.days.map((day) => `
-          <article class="calendar-day-column agenda-day-drop-zone" data-agenda-date="${day.date}">
-            <div class="calendar-day-head">
-              <strong>${escapeHtml(day.weekdayLabel)}</strong>
-              <span>${escapeHtml(day.shortLabel)}</span>
-            </div>
-            <div class="meta-row">${metaPills([day.type.label, `${day.totalLoad}/${day.totalCapacity} min`, `${day.alerts} alerta(s)`])}</div>
-            <div class="agenda-day-stack">
-              ${day.tasks.length
-                ? day.tasks.map((task) => renderAgendaKanbanTask(task, model)).join("")
-                : emptyState("Dia livre para encaixar algo.")}
-              ${day.blocks?.length ? day.blocks.map((entry) => renderAgendaBlockCard(entry)).join("") : ""}
-              <div class="agenda-drop-tail" data-agenda-date="${day.date}">Soltar no fim do dia</div>
-            </div>
-          </article>
-        `).join("")}
-      </div>
-    `, model, { wide: true, advancedMode }),
+          ${model.agenda.days.map((day) => {
+            const itemCount = day.tasks.length + (day.blocks?.length || 0);
+            return `
+            <article class="calendar-day-column agenda-day-drop-zone ${itemCount > 10 ? "is-scrollable" : ""}" data-agenda-date="${day.date}">
+              <div class="calendar-day-head">
+                <strong>${escapeHtml(day.weekdayLabel)}</strong>
+                <span>${escapeHtml(day.shortLabel)}</span>
+              </div>
+              <div class="meta-row">${metaPills([day.type.label, `${day.totalLoad}/${day.totalCapacity} min`, `${day.alerts} alerta(s)`])}</div>
+              <div class="agenda-day-stack ${itemCount > 10 ? "is-scrollable" : ""}">
+                ${day.tasks.length
+                  ? day.tasks.map((task) => renderAgendaKanbanTask(task, model)).join("")
+                  : emptyState("Dia livre para encaixar algo.")}
+                ${day.blocks?.length ? day.blocks.map((entry) => renderAgendaBlockCard(entry)).join("") : ""}
+                <div class="agenda-drop-tail" data-agenda-date="${day.date}">Soltar no fim do dia</div>
+              </div>
+            </article>
+          `;
+          }).join("")}
+        </div>
+      `, model, { wide: true, advancedMode }),
     editor: layoutCard("agenda", "editor", "Fila para encaixar e blocos", `
       <div class="reading-card">
         <div class="panel-head">
