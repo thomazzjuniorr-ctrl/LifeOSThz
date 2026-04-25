@@ -1502,6 +1502,11 @@ function pushHistory(state, type, summary, meta = {}) {
   state.history = state.history.slice(0, 250);
 }
 
+function touchSettingsState(state) {
+  state.settings = state.settings || {};
+  state.settings.updatedAt = nowIso();
+}
+
 function migrateRemovedModules(state) {
   const removedAreaMap = {
     "area-health": "area-personal",
@@ -1635,6 +1640,7 @@ function prepareState(state) {
       workModuleMode: state.settings?.architecture?.workModuleMode || "embedded",
       futureApiReady: toBoolean(state.settings?.architecture?.futureApiReady, true),
     },
+    updatedAt: state.settings?.updatedAt || state.meta?.updatedAt || nowIso(),
   };
 
   state.meta = {
@@ -1742,6 +1748,8 @@ function normalizeSprintPayload(payload = {}, existing = null, index = 0, refere
     keywords: parseLines(payload.keywords, existingKeywords),
     priorityAreas: parseIdList(payload.priorityAreas, existing?.priorityAreas || []),
     status: payload.status || existing?.status || "planned",
+    createdAt: existing?.createdAt || payload.createdAt || nowIso(),
+    updatedAt: payload.updatedAt || nowIso(),
   };
 }
 
@@ -3270,6 +3278,8 @@ function normalizeAreaPayload(payload = {}, existing = null) {
     type: payload.type || existing?.type || "life",
     color: payload.color || existing?.color || "#8f7a62",
     description: payload.description || existing?.description || "",
+    createdAt: existing?.createdAt || payload.createdAt || nowIso(),
+    updatedAt: payload.updatedAt || nowIso(),
   };
 }
 
@@ -3298,6 +3308,8 @@ function normalizeProjectPayload(payload = {}, existing = null) {
     backlogItems: parseProjectBacklogItems(payload.backlogItems, existing?.backlogItems || template.backlogItems || []),
     baseActivities: parseProjectBaseActivities(payload.baseActivities, existing?.baseActivities || template.baseActivities || []),
     actionPlan: parseProjectActionPlan(payload.actionPlan, existing?.actionPlan || template.actionPlan || []),
+    createdAt: existing?.createdAt || payload.createdAt || nowIso(),
+    updatedAt: payload.updatedAt || nowIso(),
   };
 }
 
@@ -3310,6 +3322,8 @@ function normalizeObjectivePayload(payload = {}, existing = null) {
     progress: toNumber(payload.progress, existing?.progress || 0),
     dueDate: payload.dueDate || existing?.dueDate || "",
     description: payload.description || existing?.description || "",
+    createdAt: existing?.createdAt || payload.createdAt || nowIso(),
+    updatedAt: payload.updatedAt || nowIso(),
   };
 }
 
@@ -3341,6 +3355,8 @@ function normalizeBlockPayload(payload = {}, existing = null) {
     fixed: toBoolean(payload.fixed, existing?.fixed !== false),
     note: payload.note || existing?.note || "",
     source: existing?.source || payload.source || "manual",
+    createdAt: existing?.createdAt || payload.createdAt || nowIso(),
+    updatedAt: payload.updatedAt || nowIso(),
   };
 }
 
@@ -3426,6 +3442,8 @@ function normalizeDayOverridePayload(state, payload = {}, existing = null) {
     },
     note: payload.note || existing?.note || "",
     lastPlan: existing?.lastPlan || null,
+    createdAt: existing?.createdAt || payload.createdAt || nowIso(),
+    updatedAt: payload.updatedAt || nowIso(),
   };
 }
 
@@ -3806,6 +3824,7 @@ export function updateBlockSchedule(state, blockId, updates = {}) {
   block.startTime = updates.startTime || block.startTime;
   block.endTime = updates.endTime || block.endTime;
   block.note = updates.note ?? block.note;
+  block.updatedAt = nowIso();
   pushHistory(nextState, "agenda-block", `Bloco atualizado: ${block.title}.`);
   return nextState;
 }
@@ -4454,6 +4473,7 @@ export function setActiveSprint(state, sprintId) {
   nextState.sprints = nextState.sprints.map((entry) => ({
     ...entry,
     status: entry.id === sprintId ? "current" : entry.status === "current" ? "planned" : entry.status,
+    updatedAt: entry.id === sprintId || entry.status === "current" ? nowIso() : entry.updatedAt,
   }));
   pushHistory(nextState, "active-sprint", `Sprint atual definida: ${sprint.title}.`);
   return nextState;
@@ -4513,6 +4533,7 @@ export function replanWeek(state, referenceDate = getCurrentISODate()) {
 export function toggleEditMode(state) {
   const nextState = cloneState(state);
   nextState.settings.editMode = !nextState.settings.editMode;
+  touchSettingsState(nextState);
   pushHistory(nextState, "edit-mode", `Modo edicao ${nextState.settings.editMode ? "ativado" : "desativado"}.`);
   return nextState;
 }
@@ -4556,6 +4577,7 @@ export function saveSettings(state, payload) {
     lastPulledAt: nextState.settings.cloudSync.lastPulledAt || "",
     deviceId: nextState.settings.cloudSync.deviceId || "",
   };
+  touchSettingsState(nextState);
   pushHistory(nextState, "settings", "Configuracoes atualizadas.");
   return nextState;
 }
@@ -4701,11 +4723,13 @@ export function saveCurrentLayoutAsDefault(state, page = "") {
 
   if (targetPage) {
     nextState.settings.layoutDefaults[targetPage] = ensureLayoutFrames(cloneValue(nextState.settings.layouts[targetPage]));
+    touchSettingsState(nextState);
     pushHistory(nextState, "layout-default", `Layout padrao salvo para ${targetPage}.`);
     return nextState;
   }
 
   nextState.settings.layoutDefaults = cloneLayouts(nextState.settings.layouts);
+  touchSettingsState(nextState);
   pushHistory(nextState, "layout-default", "Layout atual salvo como padrao.");
   return nextState;
 }
@@ -4718,11 +4742,13 @@ export function restoreLayoutDefault(state, page = "") {
 
   if (targetPage) {
     nextState.settings.layouts[targetPage] = ensureLayoutFrames(cloneValue(nextState.settings.layoutDefaults[targetPage]));
+    touchSettingsState(nextState);
     pushHistory(nextState, "layout-restore", `Layout padrao restaurado para ${targetPage}.`);
     return nextState;
   }
 
   nextState.settings.layouts = cloneLayouts(nextState.settings.layoutDefaults || DEFAULT_LAYOUTS);
+  touchSettingsState(nextState);
   pushHistory(nextState, "layout-restore", "Layout padrao restaurado.");
   return nextState;
 }
@@ -4736,6 +4762,7 @@ export function moveLayoutCard(state, page, cardId, targetId) {
   const [entry] = cards.splice(fromIndex, 1);
   cards.splice(toIndex, 0, entry);
   nextState.settings.layouts[page] = cards;
+  touchSettingsState(nextState);
   pushHistory(nextState, "layout-move", `Card movido em ${page}: ${cardId}.`);
   return nextState;
 }
@@ -4763,6 +4790,7 @@ export function resizeLayoutCard(state, page, cardId, dimension, direction) {
     z: Number.isFinite(entry.frame?.z) ? entry.frame.z : 1,
   };
 
+  touchSettingsState(nextState);
   pushHistory(nextState, "layout-resize", `Card redimensionado em ${page}: ${cardId}.`, { dimension, direction });
   return nextState;
 }
@@ -4790,6 +4818,7 @@ export function nudgeLayoutCard(state, page, cardId, axis, direction) {
     entry.frame.y = Math.max(0, entry.frame.y + delta);
   }
 
+  touchSettingsState(nextState);
   pushHistory(nextState, "layout-nudge", `Posicao do bloco ajustada em ${page}: ${cardId}.`, { axis, direction });
   return nextState;
 }
@@ -4809,6 +4838,7 @@ export function layerLayoutCard(state, page, cardId, direction) {
     z: Number.isFinite(entry.frame?.z) ? entry.frame.z : 1,
   };
   entry.frame.z = clamp(entry.frame.z + (direction === "increase" ? 1 : -1), 1, 30);
+  touchSettingsState(nextState);
   pushHistory(nextState, "layout-layer", `Camada do bloco ajustada em ${page}: ${cardId}.`, { direction });
   return nextState;
 }
@@ -4821,6 +4851,7 @@ export function saveGoogleCalendarConfig(state, config) {
     calendarId: config.calendarId || "primary",
   };
   nextState.calendar.calendarId = nextState.settings.googleCalendar.calendarId;
+  touchSettingsState(nextState);
   return nextState;
 }
 

@@ -445,6 +445,7 @@ export function buildSeedState(baseDate = new Date()) {
       sidebarCollapsed: true,
       visualDensity: "compact",
       accentTone: "forest",
+      updatedAt: new Date().toISOString(),
       layoutDefaults: {
         dashboard: [
           { id: "overview", width: "full", height: "compact", frame: null },

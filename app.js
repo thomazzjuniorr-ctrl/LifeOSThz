@@ -112,6 +112,14 @@ const PAGE_LABELS = {
   settings: "Configuracoes",
 };
 
+const MOBILE_PRIMARY_SECTIONS = [
+  { id: "today", label: "Hoje" },
+  { id: "inbox", label: "Entrada" },
+  { id: "agenda", label: "Agenda" },
+  { id: "checklist", label: "Checklist" },
+  { id: "projects", label: "Projetos" },
+];
+
 const LAYOUT_WIDTH_LABELS = {
   compact: "Estreito",
   medium: "Medio",
@@ -182,6 +190,18 @@ function progressBar(value) {
       <div class="progress-fill" style="width:${Math.max(0, Math.min(100, value))}%"></div>
     </div>
   `;
+}
+
+function renderSyncBadge(model) {
+  const ready = hasCloudSyncConfigured({ settings: { cloudSync: model.settings.cloudSync } });
+  const syncing = Boolean(model.settings.cloudSync.enabled);
+  if (ready) {
+    return `<span class="sync-badge ready">Sync ativo</span>`;
+  }
+  if (syncing) {
+    return `<span class="sync-badge waiting">Configurar sync</span>`;
+  }
+  return `<span class="sync-badge local">So local</span>`;
 }
 
 function getChecklistToggleMeta(_entry = {}) {
@@ -843,9 +863,22 @@ function renderMobileTopbar(model, options = {}) {
         </button>
         <div class="mobile-topbar-copy">
           <span class="page-kicker">${escapeHtml(page.kicker)}</span>
-          <strong>${escapeHtml(page.title)}</strong>
+          <h2 class="mobile-topbar-title">${escapeHtml(page.title)}</h2>
         </div>
-        <button class="ghost-button small" data-action="navigate" data-section="inbox">Entrada</button>
+        ${model.activeSection === "inbox"
+          ? `<button class="ghost-button small" data-action="open-voice-capture" data-source-section="inbox">Microfone</button>`
+          : `<button class="primary-button small" data-action="navigate" data-section="inbox">Nova</button>`}
+      </div>
+      <div class="mobile-topbar-meta">
+        ${renderSyncBadge(model)}
+        <span class="mobile-topbar-date">${escapeHtml(model.selectedDay.longLabel)}</span>
+      </div>
+      <div class="mobile-shortcut-strip" role="navigation" aria-label="Atalhos principais mobile">
+        ${MOBILE_PRIMARY_SECTIONS.map((item) => `
+          <button class="mobile-shortcut-button ${model.activeSection === item.id ? "active" : ""}" data-action="navigate" data-section="${item.id}">
+            ${escapeHtml(item.label)}
+          </button>
+        `).join("")}
       </div>
     </section>
   `;
@@ -945,17 +978,12 @@ function renderHeader(model, options = {}) {
   if (options.isMobile) {
     return `
       <section class="workspace-header-card mobile-header-card">
-        <div class="workspace-cover-band compact">
-          <span class="cover-title">${escapeHtml(page.title)}</span>
-        </div>
-        <div class="header-main-row">
+        <div class="mobile-context-row">
           <div>
             <span class="page-kicker">${escapeHtml(page.kicker)}</span>
-            <h2>${escapeHtml(page.title)}</h2>
-            <p>${escapeHtml(page.text)}</p>
+            <p class="mobile-context-copy">${escapeHtml(page.text)}</p>
           </div>
           <div class="header-badges mobile-header-badges">
-            <button class="ghost-button small" data-action="toggle-sidebar">Menu</button>
             ${badge(`Energia ${model.dashboard.energyLabel}`)}
             ${model.selectedDay.alerts ? badge(`${model.selectedDay.alerts} alerta(s)`, "warning") : badge("Sem alertas", "success")}
           </div>
@@ -968,6 +996,7 @@ function renderHeader(model, options = {}) {
         </div>
         <div class="toolbar-row mobile-quick-actions">
           <button class="secondary-button" data-action="replan-week">Reorganizar</button>
+          <button class="ghost-button" data-action="navigate" data-section="agenda">Agenda</button>
           <button class="ghost-button" data-action="navigate" data-section="prioritize">Priorizar</button>
         </div>
       </section>
@@ -1194,6 +1223,42 @@ function renderDaysPage(model, options = {}) {
   return renderLayoutPage("days", model, cards, options);
 }
 function renderInboxPage(model, options = {}) {
+  if (options.isMobile) {
+    return `
+      <section class="mobile-inbox-stack">
+        <article class="panel-card mobile-capture-card">
+          <div class="panel-head compact">
+            <div>
+              <span class="page-kicker">Captura rapida</span>
+              <h3>Jogue a tarefa e siga</h3>
+            </div>
+            ${renderSyncBadge(model)}
+          </div>
+          <p class="muted-copy">Sem area, sem projeto e sem prazo aqui. Capture agora e organize depois.</p>
+          <form class="simple-capture-form minimal-capture-form mobile-capture-form" data-form="capture-task">
+            <label class="field">
+              <span>Nova captura</span>
+              <input name="title" placeholder="Ex: ligar para o cliente, revisar proposta, separar documentos..." autocomplete="off" autofocus required />
+            </label>
+            <div class="toolbar-row mobile-capture-actions">
+              ${renderVoiceCaptureButton("Microfone", "inbox")}
+              <button class="primary-button" type="submit">Enviar</button>
+            </div>
+          </form>
+        </article>
+        <article class="panel-card">
+          <div class="panel-head compact">
+            <div>
+              <strong>Capturas recentes</strong>
+              <p>${model.inbox.counts.raw} na inbox • ${model.inbox.counts.recent} recentes</p>
+            </div>
+          </div>
+          ${taskList(model.inbox.recent, { empty: "Sem capturas recentes. Use o campo acima ou o microfone." })}
+        </article>
+      </section>
+    `;
+  }
+
   const advancedMode = isAdvancedLayoutMode(model, options);
   const cards = {
     capture: layoutCard("inbox", "capture", "Captura rapida", `
@@ -1661,8 +1726,13 @@ function renderSettingsPage(model, options = {}) {
     sync: layoutCard("settings", "sync", "Sincronizacao", `
       <div class="callout">
         <strong>Sincronizacao entre celular e desktop</strong>
-        <p>Modo recomendado: Supabase com snapshot unico do seu workspace. A captura continua local-first, mas com sincronizacao automatica entre dispositivos.</p>
+        <p>Modo recomendado: Supabase com workspace unico. Isso sincroniza Entrada, Checklist, Agenda, Organizar, Projetos, Sprints e configuracoes importantes entre celular e desktop.</p>
       </div>
+      <div class="meta-row">${metaPills([
+        "Mobile + desktop no mesmo workspace",
+        "Captura continua local-first",
+        "Sync automatico por intervalo, foco e envio",
+      ])}</div>
       <div class="field-grid two">
         <label class="field">
           <span>Ativar sincronizacao</span>
@@ -1690,6 +1760,10 @@ function renderSettingsPage(model, options = {}) {
       <div class="toolbar-row">
         <button class="ghost-button" type="button" data-action="generate-sync-key">Gerar workspace key</button>
         <button class="ghost-button" type="button" data-action="sync-cloud-now">Sincronizar agora</button>
+      </div>
+      <div class="callout subtle">
+        <strong>Setup rapido</strong>
+        <p>1. Publique na Vercel. 2. Crie a tabela no Supabase. 3. Repita os mesmos dados no celular e no desktop. 4. Clique em salvar e depois em sincronizar agora nos dois dispositivos.</p>
       </div>
       <div class="meta-row">${metaPills([
         model.settings.cloudSync.lastSyncedAt ? `Ultimo envio: ${formatShortDate(model.settings.cloudSync.lastSyncedAt.slice(0, 10))}` : "Sem envio ainda",
@@ -1851,6 +1925,14 @@ function renderFooter(model) {
       <p>Data de hoje: ${escapeHtml(formatShortDate(model.today))}</p>
     </footer>
   `;
+}
+
+function renderMobileFab(model) {
+  if (model.activeSection === "inbox") {
+    return "";
+  }
+
+  return `<button class="mobile-fab" data-action="navigate" data-section="inbox" aria-label="Nova tarefa">+</button>`;
 }
 
 function renderLayoutSummary(layouts = {}) {
@@ -2484,7 +2566,7 @@ export class LifeOSApp {
     const isMobile = this.isMobileViewport();
     this.lastIsMobile = isMobile;
     this.root.innerHTML = isMobile
-      ? `<div class="app-shell mobile-shell density-${escapeHtml(model.settings.visualDensity)} tone-${escapeHtml(model.settings.accentTone)}">${this.toast ? `<div class="toast">${escapeHtml(this.toast)}</div>` : ""}${this.mobileNavOpen ? `<button class="workspace-nav-backdrop" data-action="close-sidebar" aria-label="Fechar menu"></button>` : ""}${renderSidebar(model, { isMobile: true, navOpen: this.mobileNavOpen })}<main class="workspace-main mobile-main">${renderMobileTopbar(model, { navOpen: this.mobileNavOpen })}${renderHeader(model, { isMobile: true })}<div class="page-shell">${renderActivePage(model, { isMobile: true })}</div>${renderFooter(model)}</main>${renderFloatingAlert(model.activeSection === "today" ? model.floatingAlert : null, { isMobile: true })}${renderVoiceCaptureModal(this.voiceCapture)}${renderEditorModal(model.editorView, model.options)}</div>`
+      ? `<div class="app-shell mobile-shell density-${escapeHtml(model.settings.visualDensity)} tone-${escapeHtml(model.settings.accentTone)}">${this.toast ? `<div class="toast">${escapeHtml(this.toast)}</div>` : ""}${this.mobileNavOpen ? `<button class="workspace-nav-backdrop" data-action="close-sidebar" aria-label="Fechar menu"></button>` : ""}${renderSidebar(model, { isMobile: true, navOpen: this.mobileNavOpen })}<main class="workspace-main mobile-main">${renderMobileTopbar(model, { navOpen: this.mobileNavOpen })}${renderHeader(model, { isMobile: true })}<div class="page-shell">${renderActivePage(model, { isMobile: true })}</div>${renderFooter(model)}${renderMobileFab(model)}</main>${renderFloatingAlert(model.activeSection === "today" ? model.floatingAlert : null, { isMobile: true })}${renderVoiceCaptureModal(this.voiceCapture)}${renderEditorModal(model.editorView, model.options)}</div>`
       : `<div class="app-shell desktop-shell density-${escapeHtml(model.settings.visualDensity)} tone-${escapeHtml(model.settings.accentTone)}">${this.toast ? `<div class="toast">${escapeHtml(this.toast)}</div>` : ""}${this.mobileNavOpen ? `<button class="workspace-nav-backdrop" data-action="close-sidebar" aria-label="Fechar menu"></button>` : ""}${renderSidebar(model, { isMobile: false, navOpen: this.mobileNavOpen })}<main class="workspace-root">${renderHeader(model, { isMobile: false })}<section class="workspace-content-column"><div class="page-shell">${renderActivePage(model, { isMobile: false })}</div>${renderFooter(model)}</section></main>${renderFloatingAlert(model.activeSection === "today" ? model.floatingAlert : null, { isMobile: false })}${renderVoiceCaptureModal(this.voiceCapture)}${renderEditorModal(model.editorView, model.options)}</div>`;
   }
 }

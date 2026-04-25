@@ -187,6 +187,130 @@ function applySyncMetadata(state, config, partial = {}) {
   };
 }
 
+function deepClone(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+function getEntityTimestamp(entry) {
+  return String(entry?.updatedAt || entry?.createdAt || "");
+}
+
+function compareEntityFreshness(leftEntry, rightEntry) {
+  const leftTimestamp = getEntityTimestamp(leftEntry);
+  const rightTimestamp = getEntityTimestamp(rightEntry);
+
+  if (leftTimestamp !== rightTimestamp) {
+    return leftTimestamp.localeCompare(rightTimestamp);
+  }
+
+  return String(leftEntry?.id || "").localeCompare(String(rightEntry?.id || ""));
+}
+
+function getEntityKey(entry, index) {
+  if (entry?.id) {
+    return String(entry.id);
+  }
+
+  return `row-${index}-${String(entry?.createdAt || "")}-${String(entry?.title || entry?.name || "")}`;
+}
+
+function mergeEntityCollections(localEntries = [], remoteEntries = [], sortFn = null) {
+  const merged = new Map();
+
+  const absorb = (entry, index) => {
+    const key = getEntityKey(entry, index);
+    const previous = merged.get(key);
+    const candidate = deepClone(entry);
+
+    if (!previous || compareEntityFreshness(candidate, previous) >= 0) {
+      merged.set(key, candidate);
+    }
+  };
+
+  (remoteEntries || []).forEach(absorb);
+  (localEntries || []).forEach(absorb);
+
+  const values = Array.from(merged.values());
+  if (typeof sortFn === "function") {
+    values.sort(sortFn);
+  }
+  return values;
+}
+
+function mergeHistory(localEntries = [], remoteEntries = []) {
+  return mergeEntityCollections(localEntries, remoteEntries, (left, right) =>
+    String(right?.createdAt || "").localeCompare(String(left?.createdAt || "")));
+}
+
+function mergeSettings(localState, remoteState) {
+  const localSettingsUpdatedAt = String(localState?.settings?.updatedAt || "");
+  const remoteSettingsUpdatedAt = String(remoteState?.settings?.updatedAt || "");
+  const dominantSettings = deepClone((
+    localSettingsUpdatedAt.localeCompare(remoteSettingsUpdatedAt) >= 0
+      ? localState?.settings
+      : remoteState?.settings
+  ) || {});
+  const dominantSync = getCloudSyncConfig({ settings: { cloudSync: dominantSettings.cloudSync || {} } });
+  const localSync = getCloudSyncConfig(localState);
+
+  return {
+    ...dominantSettings,
+    updatedAt: dominantSettings.updatedAt || new Date().toISOString(),
+    cloudSync: {
+      ...dominantSync,
+      enabled: dominantSync.enabled || localSync.enabled,
+      provider: dominantSync.provider || localSync.provider,
+      projectUrl: dominantSync.projectUrl || localSync.projectUrl,
+      anonKey: dominantSync.anonKey || localSync.anonKey,
+      tableName: dominantSync.tableName || localSync.tableName,
+      workspaceKey: dominantSync.workspaceKey || localSync.workspaceKey,
+      pollIntervalSeconds: dominantSync.pollIntervalSeconds || localSync.pollIntervalSeconds,
+      deviceId: localSync.deviceId || dominantSync.deviceId || getDeviceId(),
+      lastSyncedAt: localSync.lastSyncedAt || "",
+      lastPulledAt: localSync.lastPulledAt || "",
+      lastError: localSync.lastError || "",
+    },
+  };
+}
+
+function mergeWorkspaceStates(localState, remoteState) {
+  const localFreshness = compareStateFreshness(localState, remoteState);
+  const dominantState = deepClone(localFreshness >= 0 ? localState : remoteState);
+
+  return {
+    ...dominantState,
+    profile: deepClone((localFreshness >= 0 ? localState?.profile : remoteState?.profile) || {}),
+    weeklyPlan: deepClone((localFreshness >= 0 ? localState?.weeklyPlan : remoteState?.weeklyPlan) || {}),
+    areas: mergeEntityCollections(localState?.areas, remoteState?.areas, (left, right) =>
+      String(left?.name || "").localeCompare(String(right?.name || ""))),
+    projects: mergeEntityCollections(localState?.projects, remoteState?.projects, (left, right) =>
+      String(left?.name || "").localeCompare(String(right?.name || ""))),
+    objectives: mergeEntityCollections(localState?.objectives, remoteState?.objectives, (left, right) =>
+      String(left?.title || "").localeCompare(String(right?.title || ""))),
+    sprints: mergeEntityCollections(localState?.sprints, remoteState?.sprints, (left, right) =>
+      Number(left?.slot || 0) - Number(right?.slot || 0)),
+    tasks: mergeEntityCollections(localState?.tasks, remoteState?.tasks, (left, right) =>
+      String(right?.createdAt || "").localeCompare(String(left?.createdAt || ""))),
+    blocks: mergeEntityCollections(localState?.blocks, remoteState?.blocks, (left, right) =>
+      String(left?.date || "").localeCompare(String(right?.date || ""))
+        || String(left?.startTime || "").localeCompare(String(right?.startTime || ""))),
+    dayOverrides: mergeEntityCollections(localState?.dayOverrides, remoteState?.dayOverrides, (left, right) =>
+      String(left?.date || "").localeCompare(String(right?.date || ""))),
+    history: mergeHistory(localState?.history, remoteState?.history).slice(0, 250),
+    calendar: deepClone((localFreshness >= 0 ? localState?.calendar : remoteState?.calendar) || {}),
+    dayTypes: deepClone((localFreshness >= 0 ? localState?.dayTypes : remoteState?.dayTypes) || []),
+    settings: mergeSettings(localState, remoteState),
+    ui: deepClone(localState?.ui || {}),
+    meta: {
+      ...(deepClone(dominantState.meta || {})),
+      revision: Math.max(Number(localState?.meta?.revision || 0), Number(remoteState?.meta?.revision || 0)),
+      updatedAt: localFreshness >= 0
+        ? String(localState?.meta?.updatedAt || dominantState.meta?.updatedAt || new Date().toISOString())
+        : String(remoteState?.meta?.updatedAt || dominantState.meta?.updatedAt || new Date().toISOString()),
+    },
+  };
+}
+
 async function readRemoteSnapshot(state, config = getCloudSyncConfig(state)) {
   if (!hasCloudSyncConfigured({ settings: { cloudSync: config } })) {
     return null;
@@ -252,14 +376,8 @@ export async function loadCloudState(localState) {
     const remote = await readRemoteSnapshot(nextState, config);
     if (remote?.state) {
       const remoteState = withCloudSyncSettings(remote.state);
-      if (compareStateFreshness(remoteState, nextState) > 0) {
-        return applySyncMetadata(remoteState, config, {
-          lastPulledAt: new Date().toISOString(),
-          lastError: "",
-        });
-      }
-
-      return applySyncMetadata(nextState, config, {
+      const mergedState = mergeWorkspaceStates(nextState, remoteState);
+      return applySyncMetadata(mergedState, config, {
         lastPulledAt: new Date().toISOString(),
         lastError: "",
       });
@@ -278,14 +396,20 @@ export async function loadCloudState(localState) {
 }
 
 export async function saveCloudState(state) {
-  const touchedState = touchState(state);
-  const config = getCloudSyncConfig(touchedState);
+  let nextState = withCloudSyncSettings(state);
+  const config = getCloudSyncConfig(nextState);
 
-  if (!hasCloudSyncConfigured(touchedState)) {
-    return touchedState;
+  if (!hasCloudSyncConfigured(nextState)) {
+    return touchState(nextState);
   }
 
   try {
+    const remote = await readRemoteSnapshot(nextState, config);
+    if (remote?.state) {
+      nextState = mergeWorkspaceStates(nextState, withCloudSyncSettings(remote.state));
+    }
+
+    const touchedState = touchState(nextState);
     await writeRemoteSnapshot(touchedState, config);
     return applySyncMetadata(touchedState, config, {
       lastSyncedAt: new Date().toISOString(),
@@ -316,14 +440,8 @@ export async function pullCloudState(state) {
     }
 
     const remoteState = withCloudSyncSettings(remote.state);
-    if (compareStateFreshness(remoteState, nextState) > 0) {
-      return applySyncMetadata(remoteState, config, {
-        lastPulledAt: new Date().toISOString(),
-        lastError: "",
-      });
-    }
-
-    return applySyncMetadata(nextState, config, {
+    const mergedState = mergeWorkspaceStates(nextState, remoteState);
+    return applySyncMetadata(mergedState, config, {
       lastPulledAt: new Date().toISOString(),
       lastError: "",
     });

@@ -2923,3 +2923,136 @@ body {
   }
 }
 
+.sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.22rem 0.65rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.sync-badge.ready {
+  background: rgba(88, 126, 93, 0.14);
+  color: #48674c;
+}
+
+.sync-badge.waiting {
+  background: rgba(204, 160, 68, 0.18);
+  color: #8d6722;
+}
+
+.sync-badge.local {
+  background: rgba(70, 78, 88, 0.11);
+  color: #49505b;
+}
+
+.mobile-fab {
+  position: fixed;
+  right: 1rem;
+  bottom: 1.25rem;
+  z-index: 26;
+  width: 3.2rem;
+  height: 3.2rem;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), #6d7d55);
+  color: #fff;
+  font-size: 1.8rem;
+  line-height: 1;
+  box-shadow: 0 14px 28px rgba(49, 67, 43, 0.22);
+}
+
+.app-shell.mobile-shell .mobile-topbar-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.app-shell.mobile-shell .mobile-topbar-date {
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.app-shell.mobile-shell .mobile-topbar-title {
+  margin: 0.1rem 0 0;
+  font-size: 1rem;
+  line-height: 1.15;
+}
+
+.app-shell.mobile-shell .mobile-shortcut-strip {
+  display: flex;
+  gap: 0.55rem;
+  overflow-x: auto;
+  padding-bottom: 0.15rem;
+  scrollbar-width: none;
+}
+
+.app-shell.mobile-shell .mobile-shortcut-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.app-shell.mobile-shell .mobile-shortcut-button {
+  flex: 0 0 auto;
+}
+
+.app-shell.mobile-shell .mobile-context-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.app-shell.mobile-shell .mobile-context-copy {
+  margin: 0.18rem 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.app-shell.mobile-shell .mobile-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.app-shell.mobile-shell .mobile-capture-card .panel-head {
+  align-items: flex-start;
+}
+
+.app-shell.mobile-shell .mobile-capture-form .field input {
+  font-size: 0.98rem;
+}
+
+.app-shell.mobile-shell .mobile-capture-actions {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.app-shell.mobile-shell .mobile-capture-actions > * {
+  width: 100%;
+}
+
+.app-shell.mobile-shell .mobile-inbox-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+@media (max-width: 900px) {
+  .mobile-fab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+@media (min-width: 901px) {
+  .mobile-fab {
+    display: none;
+  }
+}
+
