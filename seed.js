@@ -4,7 +4,11 @@ import {
   getQuarterLabel,
   getWeekDates,
 } from "./date.js";
-import { buildStrategicSprintsSeed2026 } from "./strategic-sprints-2026.js";
+import {
+  STRATEGIC_SPRINTS_2026,
+  buildStrategicSprintsSeed2026,
+  getStrategicSprint2026ForDate,
+} from "./strategic-sprints-2026.js";
 
 function task(overrides) {
   const now = new Date().toISOString();
@@ -174,7 +178,7 @@ function weekBlocks(weekDates) {
   return blocks;
 }
 
-const REASONING_BASE = `Quero que o sistema pense pela minha vida real, nao por um modelo generico de produtividade. Entrada precisa ser simples: eu capturo rapido e o sistema interpreta area, projeto, urgencia, proxima acao e relacao com o sprint atual antes de mandar para Organizar. Clareza vem antes da execucao: nenhuma tarefa entra no fluxo sem uma proxima acao clara. Quando uma tarefa tiver checklist, esse checklist deve virar base de entendimento e refinamento automatico. Prioridade deve considerar impacto real na vida, impacto financeiro, consequencia de nao fazer, crescimento dos projetos, estabilidade futura e protecao da mudanca. O sprint estrategico atual de 2026 precisa puxar a priorizacao: tarefas comerciais, de cliente, fechamento, receita e entregas ligadas ao sprint atual sobem naturalmente. Manha deve proteger casa, filhos, mensagens, respostas leves e urgencias curtas. Tarde deve favorecer execucao, comercial, vendas, visitas e trabalho profundo. Noite deve favorecer organizacao leve, planejamento, backlog e ajustes. Se houver excesso de tarefas, o sistema deve esconder ou rebaixar temas com peso estrategico baixo. Trabalho, familia, casa, vida pessoal, mudanca e financeiro pessoal precisam conviver no mesmo sistema, sem modulos paralelos. O sistema deve evitar sobrecarga artificial, preferindo poucas tarefas bem executadas. Deve respeitar a rotina real: manha operacional e familiar, tarde de trabalho profundo, noite complementar, quarta e sexta com futebol, sabado para conteudo e projetos, domingo leve e dias de viagem com capacidade reduzida. O sprint atual deve influenciar o peso das novas tarefas: o que conversa com o sprint sobe, o que nao conversa e nao e urgente pode ir para backlog ou esperar melhor momento. Tarefas grandes devem ser quebradas em proximas acoes menores. Delegar e estrategico quando fizer sentido. Backlog nao e deposito infinito e precisa de limpeza constante. A frente do sistema deve continuar simples: Fazer agora, Prioridade, Agendar, Delegar, Aguardar e Backlog. Alertas criticos precisam ficar visiveis e persistentes em dias de baixa capacidade. O sistema sugere automaticamente com base nessa logica, mas eu continuo com a decisao final.`;
+const REASONING_BASE = `Quero que o sistema pense pela minha vida real, nao por um modelo generico de produtividade. Entrada precisa ser simples: eu capturo rapido e o sistema interpreta area, projeto, urgencia, proxima acao e relacao com o sprint atual antes de mandar para Organizar. Clareza vem antes da execucao: nenhuma tarefa entra no fluxo sem uma proxima acao clara. Quando uma tarefa tiver checklist, esse checklist deve virar base de entendimento e refinamento automatico. Prioridade deve considerar impacto real na vida, impacto financeiro, consequencia de nao fazer, crescimento dos projetos, estabilidade futura e protecao da mudanca. O sprint estrategico atual de 2026 precisa puxar a priorizacao: tarefas comerciais, de cliente, diagnostico, proposta, visita, receita, fechamento e entregas ligadas ao sprint atual sobem naturalmente. Neste ano, consistencia vem primeiro. Crescimento vem depois. Manha deve proteger casa, filhos, mensagens, respostas leves e urgencias curtas. Tarde deve favorecer execucao principal, comercial, reunioes, visitas, diagnosticos, juridico estrategico e trabalho profundo. Noite deve favorecer organizacao leve, planejamento, backlog, revisao do dia, ajustes de IA e preparacao do proximo dia. Se houver excesso de tarefas, o sistema deve esconder ou rebaixar temas com peso estrategico baixo. Trabalho, familia, casa, vida pessoal, mudanca e financeiro pessoal precisam conviver no mesmo sistema, sem modulos paralelos. O sistema deve evitar sobrecarga artificial, preferindo poucas tarefas bem executadas. Deve respeitar a rotina real: manha operacional e familiar, tarde de trabalho profundo, noite complementar, quarta e sexta com futebol, sabado para conteudo e projetos, domingo leve e dias de viagem com capacidade reduzida. O sprint atual deve influenciar o peso das novas tarefas: o que conversa com o sprint sobe, o que nao conversa e nao e urgente pode ir para backlog ou esperar melhor momento. Tarefas grandes devem ser quebradas em proximas acoes menores. Delegar e estrategico quando fizer sentido. Backlog nao e deposito infinito e precisa de limpeza constante. A frente do sistema deve continuar simples: Fazer agora, Prioridade, Agendar, Delegar, Aguardar e Backlog. Alertas criticos precisam ficar visiveis e persistentes em dias de baixa capacidade. O sistema sugere automaticamente com base nessa logica, mas eu continuo com a decisao final.`;
 
 export function buildSeedState(baseDate = new Date()) {
   const today = formatISODate(baseDate);
@@ -187,6 +191,8 @@ export function buildSeedState(baseDate = new Date()) {
   const weekDates = getWeekDates(today);
   const [, tuesday, wednesday, thursday, friday, saturday] = weekDates;
   const currentQuarter = getQuarterLabel(today);
+  const currentStrategicSprint = getStrategicSprint2026ForDate(today);
+  const nextStrategicSprint = STRATEGIC_SPRINTS_2026.find((sprint) => sprint.startDate > today) || null;
 
   const areas = [
     { id: "area-work", name: "Trabalho", type: "work", color: "#5f7859", description: "Projetos, receita e entregas." },
@@ -207,7 +213,7 @@ export function buildSeedState(baseDate = new Date()) {
       status: "active",
       dueDate: formatISODate(addDays(today, 21)),
       priority: "high",
-      sprintId: "sprint-1-2026",
+      sprintId: "sprint-2-2026",
       color: "#5f7859",
       summary: "Clientes e follow-up com impacto financeiro.",
       description: "Workspace para briefing, follow-up, contratos, decisoes e proxima entrega da Assessoria.",
@@ -247,7 +253,7 @@ export function buildSeedState(baseDate = new Date()) {
       status: "active",
       dueDate: formatISODate(addDays(today, 30)),
       priority: "high",
-      sprintId: "sprint-1-2026",
+      sprintId: "sprint-2-2026",
       color: "#6e7f93",
       summary: "Analise, briefing e revisoes mais densas.",
       description: "Projeto para organizar briefing, revisoes e decisoes mais densas da Financeira.",
@@ -319,22 +325,26 @@ export function buildSeedState(baseDate = new Date()) {
     { id: "objective-system", title: "Criar uma operacao semanal leve e confiavel", areaId: "area-personal", projectId: "", progress: 41, dueDate: "2026-12-15", description: "Separar visao, decisao, execucao e agenda." },
   ];
 
-  const sprints = buildStrategicSprintsSeed2026().map((sprint, index) => ({
+  const sprints = buildStrategicSprintsSeed2026().map((sprint) => ({
     ...sprint,
-    status: index === 0 ? "current" : index === 1 ? "upcoming" : "planned",
-    objectiveIds: index === 0
+    status: sprint.id === currentStrategicSprint?.id
+      ? "current"
+      : sprint.id === nextStrategicSprint?.id
+        ? "upcoming"
+        : "planned",
+    objectiveIds: sprint.id === "sprint-2-2026"
       ? ["objective-work", "objective-system"]
-      : index === 1
+      : sprint.id === "sprint-3-2026"
         ? ["objective-work"]
         : ["objective-work", "objective-system"],
   }));
 
   const tasks = [
-    task({ id: "task-review-week", title: "Fechar revisao semanal e foco principal", subtasks: ["listar o que concluiu", "mover atrasos", "escolher foco da semana"], areaId: "area-personal", objectiveId: "objective-system", sprintId: "sprint-1-2026", type: "review", context: "planning", scheduledDate: today, scheduledPeriod: "night", dueDate: today, estimatedMinutes: 45, priority: "high", impact: 5, urgency: 4, effort: 2, nextAction: "abrir a semana e decidir o que entra e o que sai", gtdStage: "execute", gtdDecision: "Executar", finalBucket: "do-now", critical: true, isRecurring: true, checklistOrder: 10 }),
+    task({ id: "task-review-week", title: "Fechar revisao semanal e foco principal", subtasks: ["listar o que concluiu", "mover atrasos", "escolher foco da semana"], areaId: "area-personal", objectiveId: "objective-system", sprintId: "sprint-2-2026", type: "review", context: "planning", scheduledDate: today, scheduledPeriod: "night", dueDate: today, estimatedMinutes: 45, priority: "high", impact: 5, urgency: 4, effort: 2, nextAction: "abrir a semana e decidir o que entra e o que sai", gtdStage: "execute", gtdDecision: "Executar", finalBucket: "do-now", critical: true, isRecurring: true, checklistOrder: 10 }),
     task({ id: "task-move-costs", title: "Fechar mapa de custos da mudanca", subtasks: ["levantamento de aluguel", "somar frete e internet", "definir reserva minima"], areaId: "area-move", objectiveId: "objective-move", type: "strategic", context: "deep-work", scheduledDate: today, scheduledPeriod: "afternoon", dueDate: plus2, estimatedMinutes: 90, priority: "high", impact: 5, urgency: 4, effort: 4, nextAction: "abrir a planilha e fechar a primeira versao dos custos", gtdStage: "execute", gtdDecision: "Executar", finalBucket: "priority", checklistOrder: 9 }),
-    task({ id: "task-assessoria-proposal", title: "Fechar proposta importante da Assessoria", subtasks: ["validar escopo", "revisar valores", "enviar proposta final"], areaId: "area-work", projectId: "project-assessoria", objectiveId: "objective-work", sprintId: "sprint-1-2026", type: "strategic", context: "deep-work", scheduledDate: today, scheduledPeriod: "afternoon", dueDate: today, estimatedMinutes: 105, priority: "high", impact: 5, urgency: 5, effort: 4, nextAction: "abrir a ultima versao e ajustar os pontos finais", gtdStage: "execute", gtdDecision: "Executar", finalBucket: "do-now", critical: true, checklistOrder: 8 }),
+    task({ id: "task-assessoria-proposal", title: "Fechar proposta importante da Assessoria", subtasks: ["validar escopo", "revisar valores", "enviar proposta final"], areaId: "area-work", projectId: "project-assessoria", objectiveId: "objective-work", sprintId: "sprint-2-2026", type: "strategic", context: "deep-work", scheduledDate: today, scheduledPeriod: "afternoon", dueDate: today, estimatedMinutes: 105, priority: "high", impact: 5, urgency: 5, effort: 4, nextAction: "abrir a ultima versao e ajustar os pontos finais", gtdStage: "execute", gtdDecision: "Executar", finalBucket: "do-now", critical: true, checklistOrder: 8 }),
     task({ id: "task-family-week", title: "Preparar agenda e materiais dos filhos", areaId: "area-family", objectiveId: "objective-system", type: "family", context: "home", scheduledDate: today, scheduledPeriod: "morning", dueDate: today, estimatedMinutes: 25, priority: "medium", impact: 4, urgency: 4, effort: 1, nextAction: "separar mochila, uniforme e recados", gtdStage: "execute", gtdDecision: "Executar", finalBucket: "do-now", checklistOrder: 7 }),
-    task({ id: "task-financeira-overdue", title: "Revisar briefing atrasado da Financeira", subtasks: ["ler pendencias abertas", "definir resposta objetiva"], areaId: "area-work", projectId: "project-financeira", objectiveId: "objective-work", sprintId: "sprint-1-2026", type: "work", context: "deep-work", scheduledDate: minus2, scheduledPeriod: "afternoon", dueDate: minus1, estimatedMinutes: 65, priority: "high", impact: 5, urgency: 5, effort: 3, nextAction: "abrir o briefing atrasado e fechar o proximo passo", gtdStage: "execute", gtdDecision: "Executar", finalBucket: "priority", manualDecision: true, critical: true, checklistOrder: 6 }),
+    task({ id: "task-financeira-overdue", title: "Revisar briefing atrasado da Financeira", subtasks: ["ler pendencias abertas", "definir resposta objetiva"], areaId: "area-work", projectId: "project-financeira", objectiveId: "objective-work", sprintId: "sprint-2-2026", type: "work", context: "deep-work", scheduledDate: minus2, scheduledPeriod: "afternoon", dueDate: minus1, estimatedMinutes: 65, priority: "high", impact: 5, urgency: 5, effort: 3, nextAction: "abrir o briefing atrasado e fechar o proximo passo", gtdStage: "execute", gtdDecision: "Executar", finalBucket: "priority", manualDecision: true, critical: true, checklistOrder: 6 }),
     task({ id: "task-home-simplify", title: "Separar excesso da casa em doar, vender e levar", subtasks: ["esvaziar um armario", "marcar o que sai", "deixar pilhas prontas"], areaId: "area-home", objectiveId: "objective-move", type: "home", context: "home", scheduledDate: tomorrow, scheduledPeriod: "morning", dueDate: plus4, estimatedMinutes: 60, priority: "medium", impact: 4, urgency: 2, effort: 3, nextAction: "atacar o primeiro armario e separar em tres grupos", gtdStage: "schedule", gtdDecision: "Agendar", finalBucket: "schedule", checklistOrder: 5 }),
     task({ id: "task-finance-map", title: "Conferir contas pessoais e reserva da mudanca", areaId: "area-finance", objectiveId: "objective-move", type: "finance", context: "admin", scheduledDate: tomorrow, scheduledPeriod: "night", dueDate: plus2, estimatedMinutes: 35, priority: "medium", impact: 4, urgency: 4, effort: 1, nextAction: "abrir contas e atualizar valor disponivel", gtdStage: "schedule", gtdDecision: "Agendar", finalBucket: "schedule", checklistOrder: 4 }),
     task({ id: "task-visit-imoveis", title: "Mapear 3 opcoes de imovel com espaco de trabalho", subtasks: ["filtrar bairros", "salvar tres opcoes", "anotar custo e espaco"], areaId: "area-move", objectiveId: "objective-move", type: "strategic", context: "deep-work", scheduledDate: thursday, scheduledPeriod: "afternoon", dueDate: plus4, estimatedMinutes: 95, priority: "high", impact: 5, urgency: 4, effort: 4, nextAction: "abrir pesquisa e montar shortlist inicial", gtdStage: "schedule", gtdDecision: "Agendar", finalBucket: "priority", checklistOrder: 3 }),
@@ -342,7 +352,7 @@ export function buildSeedState(baseDate = new Date()) {
     task({ id: "task-inbox-field", title: "Possivel visita externa com deslocamento", areaId: "area-work", projectId: "project-assessoria", type: "visit", context: "outside", status: "inbox", location: "inbox", dueDate: plus2, estimatedMinutes: 90, priority: "medium", impact: 4, urgency: 3, effort: 3, gtdStage: "clarify", gtdDecision: "Processar", finalBucket: "backlog", notes: "Ainda precisa decidir o dia e o impacto na semana." }),
     task({ id: "task-inbox-boxes", title: "Comprar caixas organizadoras para a mudanca", areaId: "area-move", type: "move", context: "street", status: "inbox", location: "inbox", dueDate: plus4, estimatedMinutes: 40, priority: "medium", impact: 3, urgency: 2, effort: 1, gtdStage: "clarify", gtdDecision: "Processar", finalBucket: "backlog" }),
     task({ id: "task-inbox-idea", title: "Anotar ideia de conteudo para o Movimento", areaId: "area-work", projectId: "project-conteudo", type: "idea", context: "creative", status: "inbox", location: "inbox", estimatedMinutes: 15, priority: "low", impact: 2, urgency: 1, effort: 1, gtdStage: "clarify", gtdDecision: "Processar", finalBucket: "backlog" }),
-    task({ id: "task-backlog-clean", title: "Limpar backlog dos projetos de trabalho", areaId: "area-work", objectiveId: "objective-work", sprintId: "sprint-1-2026", type: "planning", context: "planning", status: "backlog", location: "backlog", dueDate: plus4, estimatedMinutes: 55, priority: "medium", impact: 4, urgency: 3, effort: 2, nextAction: "revisar backlog e descartar o que nao move resultado", gtdStage: "someday", gtdDecision: "Backlog", finalBucket: "backlog" }),
+    task({ id: "task-backlog-clean", title: "Limpar backlog dos projetos de trabalho", areaId: "area-work", objectiveId: "objective-work", sprintId: "sprint-2-2026", type: "planning", context: "planning", status: "backlog", location: "backlog", dueDate: plus4, estimatedMinutes: 55, priority: "medium", impact: 4, urgency: 3, effort: 2, nextAction: "revisar backlog e descartar o que nao move resultado", gtdStage: "someday", gtdDecision: "Backlog", finalBucket: "backlog" }),
     task({ id: "task-move-docs", title: "Organizar documentos para negociacao de aluguel", areaId: "area-move", objectiveId: "objective-move", status: "backlog", location: "backlog", dueDate: plus4, estimatedMinutes: 45, priority: "high", impact: 5, urgency: 3, effort: 2, nextAction: "listar documentos obrigatorios", gtdStage: "someday", gtdDecision: "Backlog", finalBucket: "backlog" }),
     task({ id: "task-template-review", title: "Template - Revisao semanal", areaId: "area-personal", objectiveId: "objective-system", type: "template", context: "planning", status: "template", location: "template", estimatedMinutes: 45, priority: "high", impact: 4, urgency: 2, effort: 2, isTemplate: true, isRecurring: true, gtdStage: "template", gtdDecision: "Modelo", finalBucket: "backlog" }),
   ];

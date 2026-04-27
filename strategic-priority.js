@@ -24,6 +24,9 @@ const THEME_KEYWORDS = {
     "vendas",
     "receita",
     "dinheiro",
+    "reuniao qualificada",
+    "diagnostico gratuito",
+    "diagnostico",
   ],
   legal: [
     "juridico",
@@ -34,9 +37,15 @@ const THEME_KEYWORDS = {
     "processos",
     "peticao",
     "pendencia juridica",
+    "casos ativos",
+    "pendencias juridicas",
+    "reestruturacao",
   ],
   product: [
     "produto",
+    "produtos",
+    "oferta",
+    "ofertas",
     "app",
     "life os",
     "sistema",
@@ -44,6 +53,10 @@ const THEME_KEYWORDS = {
     "plataforma",
     "modelo de negocio",
     "validar modelo",
+    "credito rural",
+    "renegociacao",
+    "royalties da soja",
+    "diagnostico financeiro",
   ],
   organization: [
     "organizar",
@@ -70,10 +83,14 @@ const THEME_KEYWORDS = {
     "depoimento",
     "instagram",
     "youtube",
+    "autoridade",
+    "prova real",
+    "provas reais",
   ],
   visits: [
     "visita",
     "visitas",
+    "rota",
     "presencial",
     "externa",
     "campo",
@@ -88,6 +105,17 @@ const THEME_KEYWORDS = {
     "operacao",
     "rodando",
     "consistencia",
+    "gestao rural completa",
+    "gestao rural",
+  ],
+  closings: [
+    "fechamento",
+    "fechar",
+    "fechar cliente",
+    "fechar contrato",
+    "reuniao qualificada",
+    "cliente ativo",
+    "primeiros clientes",
   ],
   bigClose: [
     "caso grande",
@@ -169,6 +197,7 @@ function detectSignals(task = {}, context = {}) {
   const heavyExecution = detectedThemes.includes("commercial")
     || detectedThemes.includes("management")
     || detectedThemes.includes("product")
+    || detectedThemes.includes("closings")
     || (task.estimatedMinutes || 0) >= 60;
 
   return {
@@ -243,7 +272,7 @@ export function evaluateStrategicPriority(task = {}, state = {}, referenceDate =
     reasons.push("entra na frente por ser fechamento grande");
   }
 
-  if (taskPeriod === "afternoon" && (signals.generatesRevenue || signals.visit || matchedThemes.some((entry) => ["commercial", "visits", "management", "bigClose"].includes(entry.id)))) {
+  if (taskPeriod === "afternoon" && (signals.generatesRevenue || signals.visit || matchedThemes.some((entry) => ["commercial", "visits", "management", "closings", "bigClose"].includes(entry.id)))) {
     scoreDelta += 10;
     reasons.push("ganha forca na tarde, que e sua janela de execucao comercial");
   }

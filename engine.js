@@ -14,7 +14,11 @@ import {
   getWeekdayKey,
 } from "./date.js";
 import { evaluateStrategicPriority } from "./strategic-priority.js";
-import { STRATEGIC_THEME_LABELS, getStrategicSprint2026ById } from "./strategic-sprints-2026.js";
+import {
+  STRATEGIC_SPRINTS_2026,
+  STRATEGIC_THEME_LABELS,
+  getStrategicSprint2026ById,
+} from "./strategic-sprints-2026.js";
 
 const DEFAULT_FILTERS = {
   scope: "integrated",
@@ -1578,7 +1582,11 @@ function prepareState(state) {
   state.areas = state.areas || [];
   state.projects = (state.projects || []).map((project) => normalizeProjectPayload(project, project));
   state.objectives = state.objectives || [];
-  state.sprints = normalizeSprints(state.sprints || [], Number(String(state.ui?.selectedDate || getCurrentISODate()).slice(0, 4)));
+  state.sprints = normalizeSprints(
+    state.sprints || [],
+    Number(String(state.ui?.selectedDate || getCurrentISODate()).slice(0, 4)),
+    state.ui?.selectedDate || getCurrentISODate(),
+  );
   state.blocks = state.blocks || [];
   state.dayTypes = state.dayTypes || [];
   state.dayOverrides = state.dayOverrides || [];
@@ -1766,35 +1774,36 @@ function normalizeStrategicWeights(value = {}, existing = {}) {
 function normalizeSprintPayload(payload = {}, existing = null, index = 0, referenceYear = getCurrentYear()) {
   const slot = inferSprintSlot(payload, index);
   const range = getSprintRangeForSlot(slot, referenceYear);
+  const strategicPreset = STRATEGIC_SPRINTS_2026.find((sprint) => sprint.id === payload.id || sprint.id === existing?.id) || null;
   const existingPriorities = existing?.priorities || existing?.keyResults || [];
   const existingProjects = existing?.projectIds || [];
   const existingKeywords = existing?.keywords || [];
   const existingGoals = existing?.goals || existing?.metas || [];
 
   return {
-    id: payload.id || existing?.id || `sprint-${slot}-${referenceYear}`,
+    id: strategicPreset?.id || payload.id || existing?.id || `sprint-${slot}-${referenceYear}`,
     slot,
-    title: String(payload.title || payload.name || existing?.title || existing?.name || `Sprint ${slot}`).trim(),
-    startDate: payload.startDate || existing?.startDate || range.startDate,
-    endDate: payload.endDate || existing?.endDate || range.endDate,
-    periodLabel: payload.periodLabel || existing?.periodLabel || range.periodLabel,
-    description: payload.description || payload.theme || existing?.description || existing?.theme || "",
-    theme: payload.theme || payload.description || existing?.theme || existing?.description || "",
-    objective: payload.objective || existing?.objective || payload.theme || payload.description || existing?.theme || existing?.description || "",
-    goals: parseLines(payload.goals || payload.metas, existingGoals),
+    title: String(strategicPreset?.title || payload.title || payload.name || existing?.title || existing?.name || `Sprint ${slot}`).trim(),
+    startDate: strategicPreset?.startDate || payload.startDate || existing?.startDate || range.startDate,
+    endDate: strategicPreset?.endDate || payload.endDate || existing?.endDate || range.endDate,
+    periodLabel: strategicPreset?.periodLabel || payload.periodLabel || existing?.periodLabel || range.periodLabel,
+    description: strategicPreset?.description || payload.description || payload.theme || existing?.description || existing?.theme || "",
+    theme: strategicPreset?.objective || payload.theme || payload.description || existing?.theme || existing?.description || "",
+    objective: strategicPreset?.objective || payload.objective || existing?.objective || payload.theme || payload.description || existing?.theme || existing?.description || "",
+    goals: parseLines(strategicPreset?.goals, existingGoals),
     objectiveIds: parseIdList(payload.objectiveIds, existing?.objectiveIds || []),
-    projectIds: parseIdList(payload.projectIds, existingProjects),
-    priorities: parseLines(payload.priorities, existingPriorities),
-    keywords: parseLines(payload.keywords, existingKeywords),
-    priorityAreas: parseIdList(payload.priorityAreas, existing?.priorityAreas || []),
-    strategicWeights: normalizeStrategicWeights(payload.strategicWeights || payload.weights, existing?.strategicWeights || existing?.weights || {}),
+    projectIds: parseIdList(strategicPreset?.projectIds, existingProjects),
+    priorities: parseLines(strategicPreset?.priorities, existingPriorities),
+    keywords: parseLines(strategicPreset?.keywords, existingKeywords),
+    priorityAreas: parseIdList(strategicPreset?.priorityAreas, existing?.priorityAreas || []),
+    strategicWeights: normalizeStrategicWeights(strategicPreset?.weights || strategicPreset?.strategicWeights, existing?.strategicWeights || existing?.weights || {}),
     status: payload.status || existing?.status || "planned",
     createdAt: existing?.createdAt || payload.createdAt || nowIso(),
     updatedAt: payload.updatedAt || nowIso(),
   };
 }
 
-function normalizeSprints(source = [], referenceYear = getCurrentYear()) {
+function normalizeSprints(source = [], referenceYear = getCurrentYear(), referenceDate = getCurrentISODate()) {
   const normalized = Array.isArray(source)
     ? source.map((sprint, index) => normalizeSprintPayload(sprint, sprint, index, referenceYear))
     : [];
@@ -1823,10 +1832,20 @@ function normalizeSprints(source = [], referenceYear = getCurrentYear()) {
   }
 
   const ordered = [...bySlot.values()].sort((left, right) => left.slot - right.slot);
+  const today = String(referenceDate || getCurrentISODate()).slice(0, 10);
+  const strategicCurrent = ordered.find((sprint) => STRATEGIC_SPRINTS_2026.some((preset) => preset.id === sprint.id) && sprint.startDate <= today && sprint.endDate >= today) || null;
+  const strategicUpcoming = ordered.find((sprint) => STRATEGIC_SPRINTS_2026.some((preset) => preset.id === sprint.id) && sprint.startDate > today) || null;
   const hasCurrent = ordered.some((sprint) => sprint.status === "current");
 
-  if (!hasCurrent) {
-    const today = getCurrentISODate();
+  if (strategicCurrent) {
+    ordered.forEach((sprint) => {
+      sprint.status = sprint.id === strategicCurrent.id
+        ? "current"
+        : sprint.id === strategicUpcoming?.id
+          ? "upcoming"
+          : "planned";
+    });
+  } else if (!hasCurrent) {
     const active = ordered.find((sprint) => sprint.startDate <= today && sprint.endDate >= today) || ordered[0];
     ordered.forEach((sprint) => {
       sprint.status = sprint.id === active.id ? "current" : sprint.status === "current" ? "planned" : sprint.status;
@@ -4435,7 +4454,7 @@ export function saveEntity(state, kind, payload) {
     }
     nextState.sprints = nextState.sprints.filter((entry) => entry.id !== sprint.id);
     nextState.sprints.push(sprint);
-    nextState.sprints = normalizeSprints(nextState.sprints, referenceYear);
+    nextState.sprints = normalizeSprints(nextState.sprints, referenceYear, nextState.ui?.selectedDate || getCurrentISODate());
   }
 
   if (kind === "habit") {
@@ -4567,7 +4586,7 @@ export function duplicateEntity(state, kind, id) {
     if (existing) {
   const year = Number(String(nextState.ui.selectedDate || getCurrentISODate()).slice(0, 4));
       nextState.sprints.push(normalizeSprintPayload({ ...existing, id: "", title: `${existing.title} (copia)`, status: "planned" }, null, inferSprintSlot(existing) - 1, year));
-      nextState.sprints = normalizeSprints(nextState.sprints, year);
+      nextState.sprints = normalizeSprints(nextState.sprints, year, nextState.ui?.selectedDate || getCurrentISODate());
     }
   }
   pushHistory(nextState, "duplicate-entity", `Item duplicado: ${kind}`);
