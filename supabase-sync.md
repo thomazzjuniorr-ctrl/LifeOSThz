@@ -30,6 +30,7 @@ Em resumo:
 
 - localmente o app salva certo
 - entre dispositivos ele nao conversa sozinho sem uma camada online
+- nesta versao, quando um dispositivo ja tem atividades locais e encontra a nuvem pela primeira vez, o app faz merge nao destrutivo e espelha o resultado
 
 ## Solucao escolhida
 
@@ -198,9 +199,11 @@ Depois:
 
 1. Clique em `Gerar workspace key` se quiser criar uma chave forte.
 2. Clique em `Salvar configuracoes`.
-3. Clique em `Sincronizar agora`.
+3. Clique em `Copiar perfil`.
+4. No outro dispositivo, abra `Configuracoes` e clique em `Importar perfil`.
+5. Clique em `Sincronizar agora`.
 
-Repita a mesma configuracao no celular e no desktop.
+Assim voce evita erro de digitacao e garante que celular e desktop usem exatamente o mesmo `Project URL`, `Anon Key`, `Tabela` e `Workspace Key`.
 
 ## Vercel
 
@@ -250,6 +253,12 @@ Fluxo atual da sincronizacao:
    - roda a cada `pollIntervalSeconds`
 5. `Sincronizar agora`
    - forca uma atualizacao manual
+
+Importante sobre atividades ja existentes:
+
+- o app nao deve apagar suas atividades locais quando voce ligar a sincronizacao
+- ele junta o que ja existe no dispositivo com o que ja existe na nuvem
+- depois espelha o resultado para o outro dispositivo
 
 Isso deixa a arquitetura pronta para realtime depois, sem depender disso agora.
 

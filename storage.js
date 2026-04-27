@@ -1,4 +1,4 @@
-import { loadCloudState, saveCloudState } from "./cloud-sync.js";
+import { loadCloudState, pullCloudState, saveCloudState } from "./cloud-sync.js";
 
 const DB_NAME = "life-os-thz-2026";
 const STORE_NAME = "app-state";
@@ -130,7 +130,7 @@ export async function saveAppState(state) {
 }
 
 export async function pullRemoteAppState(state) {
-  const nextState = await loadCloudState(state);
+  const nextState = await pullCloudState(state);
   await writeToIndexedDB(nextState).catch(() => false);
   writeToLocalStorage(nextState);
   return nextState;

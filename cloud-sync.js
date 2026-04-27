@@ -142,6 +142,58 @@ export function hasCloudSyncConfigured(state) {
   );
 }
 
+function toBase64Url(value = "") {
+  if (typeof btoa === "function") {
+    return btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  }
+
+  return Buffer.from(value, "utf8").toString("base64url");
+}
+
+function fromBase64Url(value = "") {
+  if (typeof atob === "function") {
+    const normalized = String(value).replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    return atob(padded);
+  }
+
+  return Buffer.from(String(value), "base64url").toString("utf8");
+}
+
+export function exportSyncProfile(state) {
+  const config = getCloudSyncConfig(state);
+  const payload = {
+    enabled: config.enabled,
+    provider: config.provider,
+    projectUrl: config.projectUrl,
+    anonKey: config.anonKey,
+    tableName: config.tableName,
+    workspaceKey: config.workspaceKey,
+    pollIntervalSeconds: config.pollIntervalSeconds,
+  };
+  return `lifeos-sync:${toBase64Url(JSON.stringify(payload))}`;
+}
+
+export function importSyncProfile(rawProfile = "") {
+  const raw = String(rawProfile || "").trim();
+  if (!raw) {
+    throw new Error("Cole um perfil de sincronizacao valido.");
+  }
+
+  const encoded = raw.startsWith("lifeos-sync:") ? raw.slice("lifeos-sync:".length) : raw;
+  const parsed = JSON.parse(fromBase64Url(encoded));
+
+  return {
+    enabled: toBoolean(parsed.enabled, true),
+    provider: parsed.provider || "supabase",
+    projectUrl: cleanUrl(parsed.projectUrl || parsed.url || ""),
+    anonKey: String(parsed.anonKey || parsed.publishableKey || parsed.apiKey || "").trim(),
+    tableName: String(parsed.tableName || DEFAULT_SYNC_CONFIG.tableName).trim() || DEFAULT_SYNC_CONFIG.tableName,
+    workspaceKey: String(parsed.workspaceKey || "").trim(),
+    pollIntervalSeconds: toNumber(parsed.pollIntervalSeconds, DEFAULT_SYNC_CONFIG.pollIntervalSeconds),
+  };
+}
+
 function buildRequestHeaders(config) {
   return {
     apikey: config.anonKey,
@@ -149,6 +201,27 @@ function buildRequestHeaders(config) {
     "Content-Type": "application/json",
     "x-workspace-key": config.workspaceKey,
   };
+}
+
+async function buildRemoteError(response, fallbackMessage) {
+  let detail = "";
+
+  try {
+    const rawBody = await response.text();
+    if (rawBody) {
+      try {
+        const parsed = JSON.parse(rawBody);
+        detail = parsed.message || parsed.error_description || parsed.error || parsed.hint || rawBody;
+      } catch {
+        detail = rawBody;
+      }
+    }
+  } catch {
+    detail = "";
+  }
+
+  const suffix = detail ? ` ${detail}` : "";
+  return `${fallbackMessage} [${response.status}]${suffix}`.trim();
 }
 
 function compareStateFreshness(leftState, rightState) {
@@ -189,6 +262,38 @@ function applySyncMetadata(state, config, partial = {}) {
 
 function deepClone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+function buildComparableState(state) {
+  const clone = deepClone(state || {});
+
+  if (clone.settings) {
+    clone.settings = {
+      ...clone.settings,
+      cloudSync: {
+        ...(clone.settings.cloudSync || {}),
+        lastSyncedAt: "",
+        lastPulledAt: "",
+        lastError: "",
+        deviceId: "",
+      },
+    };
+  }
+
+  if (clone.ui) {
+    clone.ui = {
+      filters: clone.ui.filters || {},
+      priorityMethod: clone.ui.priorityMethod || "",
+      checklistView: clone.ui.checklistView || "",
+      selectedProjectId: clone.ui.selectedProjectId || "",
+    };
+  }
+
+  return clone;
+}
+
+function statesDifferForSync(leftState, rightState) {
+  return JSON.stringify(buildComparableState(leftState)) !== JSON.stringify(buildComparableState(rightState));
 }
 
 function getEntityTimestamp(entry) {
@@ -327,7 +432,7 @@ async function readRemoteSnapshot(state, config = getCloudSyncConfig(state)) {
   });
 
   if (!response.ok) {
-    throw new Error("Nao foi possivel buscar o snapshot remoto.");
+    throw new Error(await buildRemoteError(response, "Nao foi possivel buscar o snapshot remoto."));
   }
 
   const rows = await response.json();
@@ -358,10 +463,42 @@ async function writeRemoteSnapshot(state, config = getCloudSyncConfig(state)) {
   });
 
   if (!response.ok) {
-    throw new Error("Nao foi possivel salvar o snapshot remoto.");
+    throw new Error(await buildRemoteError(response, "Nao foi possivel salvar o snapshot remoto."));
   }
 
   return state;
+}
+
+export async function diagnoseCloudSync(state) {
+  const nextState = withCloudSyncSettings(state);
+  const config = getCloudSyncConfig(nextState);
+
+  if (!hasCloudSyncConfigured(nextState)) {
+    return {
+      ok: false,
+      code: "missing-config",
+      message: "Preencha Project URL, Anon Key e Workspace Key iguais nos dois dispositivos.",
+    };
+  }
+
+  try {
+    const remote = await readRemoteSnapshot(nextState, config);
+    return {
+      ok: true,
+      code: remote?.state ? "remote-found" : "remote-empty",
+      message: remote?.state
+        ? "Conexao ok. Workspace remoto encontrado."
+        : "Conexao ok. Workspace remoto ainda vazio.",
+      remoteRevision: Number(remote?.revision || 0),
+      remoteUpdatedAt: String(remote?.updated_at || ""),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      code: "remote-error",
+      message: error instanceof Error ? error.message : "Falha ao testar a sincronizacao.",
+    };
+  }
 }
 
 export async function loadCloudState(localState) {
@@ -377,6 +514,16 @@ export async function loadCloudState(localState) {
     if (remote?.state) {
       const remoteState = withCloudSyncSettings(remote.state);
       const mergedState = mergeWorkspaceStates(nextState, remoteState);
+      if (statesDifferForSync(mergedState, remoteState)) {
+        const pushedState = touchState(mergedState);
+        await writeRemoteSnapshot(pushedState, config);
+        return applySyncMetadata(pushedState, config, {
+          lastSyncedAt: new Date().toISOString(),
+          lastPulledAt: new Date().toISOString(),
+          lastError: "",
+        });
+      }
+
       return applySyncMetadata(mergedState, config, {
         lastPulledAt: new Date().toISOString(),
         lastError: "",
@@ -443,6 +590,16 @@ export async function pullCloudState(state) {
 
     const remoteState = withCloudSyncSettings(remote.state);
     const mergedState = mergeWorkspaceStates(nextState, remoteState);
+    if (statesDifferForSync(mergedState, remoteState)) {
+      const pushedState = touchState(mergedState);
+      await writeRemoteSnapshot(pushedState, config);
+      return applySyncMetadata(pushedState, config, {
+        lastSyncedAt: new Date().toISOString(),
+        lastPulledAt: new Date().toISOString(),
+        lastError: "",
+      });
+    }
+
     return applySyncMetadata(mergedState, config, {
       lastPulledAt: new Date().toISOString(),
       lastError: "",

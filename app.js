@@ -1,6 +1,13 @@
 ﻿import { buildSeedState } from "./seed.js";
 import { GoogleCalendarService } from "./google-calendar.js";
-import { createWorkspaceKey, getCloudSyncConfig, hasCloudSyncConfigured } from "./cloud-sync.js";
+import {
+  createWorkspaceKey,
+  diagnoseCloudSync,
+  exportSyncProfile,
+  getCloudSyncConfig,
+  hasCloudSyncConfigured,
+  importSyncProfile,
+} from "./cloud-sync.js";
 import { loadAppState, pullRemoteAppState, resetAppState, saveAppState } from "./storage.js";
 import { createVoiceRecognizer, getVoiceCaptureSupport } from "./voice-capture.js";
 import {
@@ -202,6 +209,65 @@ function renderSyncBadge(model) {
     return `<span class="sync-badge waiting">Configurar sync</span>`;
   }
   return `<span class="sync-badge local">So local</span>`;
+}
+
+function maskSyncValue(value = "", visible = 6) {
+  const clean = String(value || "").trim();
+  if (!clean) {
+    return "nao definido";
+  }
+  if (clean.length <= visible * 2) {
+    return clean;
+  }
+  return `${clean.slice(0, visible)}...${clean.slice(-visible)}`;
+}
+
+function getMissingSyncFields(sync = {}) {
+  const missing = [];
+  if (!sync.projectUrl) missing.push("Project URL");
+  if (!sync.anonKey) missing.push("Anon Key");
+  if (!sync.workspaceKey) missing.push("Workspace Key");
+  return missing;
+}
+
+function renderSyncCallout(model) {
+  const sync = model.settings.cloudSync || {};
+  const ready = hasCloudSyncConfigured({ settings: { cloudSync: sync } });
+  const missing = getMissingSyncFields(sync);
+
+  if (!sync.enabled) {
+    return `
+      <div class="callout">
+        <strong>Este dispositivo esta local.</strong>
+        <p>Sem uma configuracao online compartilhada, celular e desktop ficam isolados. Ative a sincronizacao para unificar os dois.</p>
+      </div>
+    `;
+  }
+
+  if (!ready) {
+    return `
+      <div class="callout warning">
+        <strong>Sync ligado, mas incompleto.</strong>
+        <p>Faltam: ${escapeHtml(missing.join(", "))}. Sem esses dados iguais nos dois dispositivos, eles nao conversam.</p>
+      </div>
+    `;
+  }
+
+  if (sync.lastError) {
+    return `
+      <div class="callout warning">
+        <strong>Sync configurado com erro.</strong>
+        <p>${escapeHtml(sync.lastError)}</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="callout success">
+      <strong>Dispositivo pronto para compartilhar dados.</strong>
+      <p>Use o mesmo perfil de sincronizacao no celular e no desktop. Depois disso, Inbox, Checklist, Agenda, Organizar e Projetos passam a usar o mesmo workspace.</p>
+    </div>
+  `;
 }
 
 function getChecklistToggleMeta(_entry = {}) {
@@ -1598,10 +1664,7 @@ function renderSettingsPage(model, options = {}) {
       <label class="field"><span>Linha de raciocinio</span><textarea name="reasoningLine">${escapeHtml(model.settings.reasoningLine)}</textarea></label>
     `, model, { advancedMode }),
     sync: layoutCard("settings", "sync", "Sincronizacao", `
-      <div class="callout">
-        <strong>Sincronizacao entre celular e desktop</strong>
-        <p>Modo recomendado: Supabase com workspace unico. Isso sincroniza Entrada, Checklist, Agenda, Organizar, Projetos, Sprints e configuracoes importantes entre celular e desktop.</p>
-      </div>
+      ${renderSyncCallout(model)}
       <div class="meta-row">${metaPills([
         "Mobile + desktop no mesmo workspace",
         "Captura continua local-first",
@@ -1633,16 +1696,20 @@ function renderSettingsPage(model, options = {}) {
       </div>
       <div class="toolbar-row">
         <button class="ghost-button" type="button" data-action="generate-sync-key">Gerar workspace key</button>
+        <button class="ghost-button" type="button" data-action="copy-sync-profile">Copiar perfil</button>
+        <button class="ghost-button" type="button" data-action="import-sync-profile">Importar perfil</button>
         <button class="ghost-button" type="button" data-action="sync-cloud-now">Sincronizar agora</button>
       </div>
       <div class="callout subtle">
         <strong>Setup rapido</strong>
-        <p>1. Publique na Vercel. 2. Crie a tabela no Supabase. 3. Repita os mesmos dados no celular e no desktop. 4. Clique em salvar e depois em sincronizar agora nos dois dispositivos.</p>
+        <p>1. Configure uma vez no desktop. 2. Clique em salvar. 3. Use “Copiar perfil” e cole no mobile em “Importar perfil”. 4. Clique em sincronizar agora nos dois dispositivos.</p>
       </div>
       <div class="meta-row">${metaPills([
         model.settings.cloudSync.lastSyncedAt ? `Ultimo envio: ${formatShortDate(model.settings.cloudSync.lastSyncedAt.slice(0, 10))}` : "Sem envio ainda",
         model.settings.cloudSync.lastPulledAt ? `Ultima leitura: ${formatShortDate(model.settings.cloudSync.lastPulledAt.slice(0, 10))}` : "Sem leitura ainda",
         model.settings.cloudSync.lastError ? `Erro: ${model.settings.cloudSync.lastError}` : "Sincronizacao sem erro registrado",
+        `Workspace: ${escapeHtml(maskSyncValue(model.settings.cloudSync.workspaceKey || ""))}`,
+        `Device: ${escapeHtml(maskSyncValue(model.settings.cloudSync.deviceId || ""))}`,
       ])}</div>
     `, model, { advancedMode }),
     voice: layoutCard("settings", "voice", "Voz e layout", `
@@ -1920,6 +1987,15 @@ export class LifeOSApp {
     this.render();
   }
 
+  getSettingsDraftState() {
+    const form = this.root.querySelector('[data-form="settings-form"]');
+    if (!(form instanceof HTMLFormElement)) {
+      return this.state;
+    }
+
+    return saveSettings(this.state, formDataToObject(form));
+  }
+
   refreshCloudSyncLoop() {
     if (this.cloudSyncTimer) {
       window.clearInterval(this.cloudSyncTimer);
@@ -2161,7 +2237,62 @@ export class LifeOSApp {
       }
       return;
     }
-    if (action === "sync-cloud-now") { await this.syncCloudState("manual"); return; }
+    if (action === "copy-sync-profile") {
+      const draftState = this.getSettingsDraftState();
+      if (!hasCloudSyncConfigured(draftState)) {
+        this.showToast("Preencha Project URL, Anon Key e Workspace Key antes de copiar o perfil.");
+        return;
+      }
+
+      const profile = exportSyncProfile(draftState);
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(profile);
+          this.showToast("Perfil de sync copiado. Cole no outro dispositivo em Configuracoes > Sincronizacao.");
+        } else {
+          window.prompt("Copie o perfil de sincronizacao:", profile);
+        }
+      } catch {
+        window.prompt("Copie o perfil de sincronizacao:", profile);
+      }
+      return;
+    }
+    if (action === "import-sync-profile") {
+      const rawProfile = window.prompt("Cole aqui o perfil de sincronizacao gerado no outro dispositivo:");
+      if (!rawProfile) {
+        return;
+      }
+
+      try {
+        const profile = importSyncProfile(rawProfile);
+        this.state = saveSettings(this.state, {
+          syncEnabled: String(profile.enabled),
+          syncProvider: profile.provider || "supabase",
+          syncProjectUrl: profile.projectUrl || "",
+          syncAnonKey: profile.anonKey || "",
+          syncTableName: profile.tableName || "life_os_snapshots",
+          syncWorkspaceKey: profile.workspaceKey || "",
+          syncPollIntervalSeconds: String(profile.pollIntervalSeconds || 20),
+        });
+        this.refreshCloudSyncLoop();
+        await this.persist("Perfil de sincronizacao importado.");
+      } catch (error) {
+        this.showToast(error instanceof Error ? error.message : "Nao foi possivel importar o perfil.");
+      }
+      return;
+    }
+    if (action === "sync-cloud-now") {
+      this.state = this.getSettingsDraftState();
+      this.refreshCloudSyncLoop();
+      const diagnosis = await diagnoseCloudSync(this.state);
+      if (!diagnosis.ok) {
+        this.showToast(diagnosis.message);
+        return;
+      }
+      await this.persist("Configuracao de sincronizacao atualizada.");
+      await this.syncCloudState("manual");
+      return;
+    }
     if (action === "connect-google") { await this.handleGoogleConnect(); return; }
     if (action === "sync-google") { await this.handleGoogleSync(); return; }
     if (action === "reset-app") { if (!window.confirm("Deseja resetar a base local para a seed atual?")) return; this.state = await resetAppState(() => buildSeedState()); this.refreshCloudSyncLoop(); this.showToast("Base local resetada."); this.render(); }

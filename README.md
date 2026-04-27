@@ -122,15 +122,17 @@ Fluxo recomendado agora:
 
 1. publicar na Vercel
 2. criar um projeto no Supabase e a tabela `life_os_snapshots`
-3. configurar Supabase em `Configuracoes`
-4. repetir a mesma configuracao no celular e no desktop
-5. usar `Sincronizar agora` na primeira conexao
+3. configurar Supabase em `Configuracoes` no desktop
+4. usar `Copiar perfil`
+5. no mobile, usar `Importar perfil`
+6. usar `Sincronizar agora` na primeira conexao nos dois dispositivos
 
 Diagnostico resumido:
 
 - sem sync configurado, cada dispositivo usa apenas `IndexedDB` ou `localStorage`
 - por isso celular e desktop ficam isolados
 - a sincronizacao real acontece quando os dois usam o mesmo `workspace key` no Supabase
+- o merge agora e nao destrutivo: atividades ja existentes no dispositivo permanecem e passam a ser espelhadas
 
 Seguranca:
 
