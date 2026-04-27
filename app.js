@@ -651,11 +651,49 @@ function renderAutoPilotList(autoPilot = []) {
             </div>
             ${badge(entry.priorityMode === "manual" ? "Manual" : "Automatico", entry.priorityMode === "manual" ? "warning" : "success")}
           </div>
+          ${entry.strategicSprintTitle || entry.strategicWeight ? `<div class="meta-row">${metaPills([
+            entry.strategicSprintTitle || "",
+            entry.strategicWeight ? `Peso ${entry.strategicWeight}` : "",
+          ])}</div>` : ""}
           ${entry.nextAction ? `<p class="next-action"><strong>Proxima acao:</strong> ${escapeHtml(entry.nextAction)}</p>` : ""}
+          ${entry.strategicPriorityReason ? `<p class="muted-copy">${escapeHtml(entry.strategicPriorityReason)}</p>` : ""}
           ${entry.reasons?.length ? `<div class="meta-row">${metaPills(entry.reasons)}</div>` : ""}
           <div class="toolbar-row">
             <button class="ghost-button small" data-action="open-editor" data-kind="task" data-id="${entry.id}">Ajustar</button>
             <button class="ghost-button small" data-task-action="today" data-task-id="${entry.id}">Mandar para hoje</button>
+          </div>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderStrategicPriorityList(tasks = [], currentSprint = null) {
+  if (!tasks.length) {
+    return emptyState("Nenhuma tarefa ganhou tracao suficiente no sprint atual.");
+  }
+
+  return `
+    <div class="stack-list compact-stack">
+      ${tasks.map((task) => `
+        <article class="reading-card strategic-priority-card">
+          <div class="task-card-top">
+            <div>
+              <strong>${escapeHtml(task.title)}</strong>
+              <p>${escapeHtml(task.gtdDecision)} • ${escapeHtml(task.finalBucket)}</p>
+            </div>
+            ${badge(task.strategicPriorityLevel === "maxima" ? "Maxima" : task.strategicPriorityLevel === "alta" ? "Alta" : task.strategicPriorityLevel === "media" ? "Media" : "Baixa", task.strategicPriorityLevel === "maxima" || task.strategicPriorityLevel === "alta" ? "success" : task.strategicPriorityLevel === "baixa" ? "warning" : "")}
+          </div>
+          <div class="meta-row">${metaPills([
+            task.strategicSprintTitle || currentSprint?.title || "",
+            task.strategicTheme ? `Tema ${task.strategicTheme}` : "",
+            task.strategicWeight ? `Peso ${task.strategicWeight}` : "",
+            task.periodLabel || "",
+          ])}</div>
+          ${task.strategicPriorityReason ? `<p class="muted-copy">${escapeHtml(task.strategicPriorityReason)}</p>` : ""}
+          <div class="toolbar-row">
+            <button class="ghost-button small" data-action="open-editor" data-kind="task" data-id="${task.id}">Detalhes</button>
+            <button class="ghost-button small" data-task-action="today" data-task-id="${task.id}">Mandar para hoje</button>
           </div>
         </article>
       `).join("")}
@@ -1004,6 +1042,13 @@ function renderDashboardPage(model, options = {}) {
         ${metricCard("Energia", model.dashboard.energyLabel, "Usada para capacidade real")}
         ${metricCard("Dias para mudanca", String(model.dashboard.daysToMove), "Meta ate novembro")}
       </div>
+      ${model.dashboard.currentSprint ? `
+        <div class="callout success">
+          <strong>${escapeHtml(model.dashboard.currentSprint.title)} • ${escapeHtml(model.dashboard.currentSprint.objective || model.dashboard.currentSprint.theme || "")}</strong>
+          <p>${escapeHtml((model.dashboard.currentSprint.priorities || []).slice(0, 2).join(" • ") || "Sem prioridades detalhadas ainda.")}</p>
+        </div>
+        <div class="meta-row">${metaPills(model.dashboard.strategicWeightPills || [])}</div>
+      ` : ""}
     `, model, { advancedMode }),
     radar: layoutCard("dashboard", "radar", "Radar da semana", `
       <div class="stack-list">
@@ -1039,6 +1084,19 @@ function renderDashboardPage(model, options = {}) {
           </article>
         `).join("")}
       </div>
+      ${model.dashboard.sprintPriorityTasks?.length ? `
+        <div class="reading-card">
+          <strong>Prioridade do sprint</strong>
+          <div class="stack-list compact-stack">
+            ${model.dashboard.sprintPriorityTasks.map((task) => `
+              <article class="summary-row">
+                <div><strong>${escapeHtml(task.title)}</strong><p>${escapeHtml(task.strategicPriorityReason || "")}</p></div>
+                <div class="meta-row">${metaPills([task.strategicTheme ? `Tema ${task.strategicTheme}` : "", task.strategicWeight ? `Peso ${task.strategicWeight}` : ""])}</div>
+              </article>
+            `).join("")}
+          </div>
+        </div>
+      ` : ""}
     `, model, { advancedMode }),
     load: layoutCard("dashboard", "load", "Carga semanal", `
       <div class="week-load-grid">
@@ -1249,6 +1307,13 @@ function renderPrioritizePage(model, options = {}) {
             ${model.prioritize.weekFrog ? taskCard(model.prioritize.weekFrog, { emphasis: true, mode: "mobile-prioritize" }) : emptyState("Nenhum sapo da semana definido.")}
           </div>
         `)}
+        ${panel("Prioridade do Sprint", `
+          <div class="callout success">
+            <strong>${escapeHtml(model.prioritize.currentSprint?.title || "Sem sprint atual")}</strong>
+            <p>${escapeHtml(model.prioritize.currentSprint?.objective || model.prioritize.currentSprint?.description || "Ative um sprint para reforcar a leitura estrategica.")}</p>
+          </div>
+          ${renderStrategicPriorityList(model.prioritize.sprintPriority.slice(0, 4), model.prioritize.currentSprint)}
+        `)}
         ${panel("Piloto automatico", renderAutoPilotList(model.prioritize.autoPilot))}
         ${panel("Fila para decidir", taskList(model.prioritize.ranked.slice(0, 6), { empty: "Nada para refinar agora.", mode: "mobile-prioritize" }))}
         ${panel("Linha de raciocinio", `
@@ -1266,6 +1331,13 @@ function renderPrioritizePage(model, options = {}) {
       <div class="method-strip">${model.options.methods.map((item) => `<button class="chip-button ${model.priorityMethod === item.id ? "active" : ""}" data-action="set-priority-method" data-method="${item.id}">${escapeHtml(item.label)}</button>`).join("")}</div>
       <p class="muted-copy">${escapeHtml(model.options.methods.find((item) => item.id === model.priorityMethod)?.guide || "")}</p>
       <div class="stage-grid">${model.prioritize.stages.map((stage) => `<article class="stage-card"><strong>${escapeHtml(stage.decision)}</strong><span>${stage.count} tarefa(s)</span><div class="stage-mini-list">${stage.tasks.slice(0, 3).map((task) => `<small>${escapeHtml(task.title)}</small>`).join("") || "<small>Sem itens</small>"}</div></article>`).join("")}</div>
+    `, model, { wide: true, advancedMode: isAdvancedLayoutMode(model, options) }),
+    sprint: layoutCard("prioritize", "sprint", "Prioridade do Sprint", `
+      <div class="callout success">
+        <strong>${escapeHtml(model.prioritize.currentSprint?.title || "Sem sprint atual")}</strong>
+        <p>${escapeHtml(model.prioritize.currentSprint?.objective || model.prioritize.currentSprint?.description || "Ative um sprint para reforcar a leitura estrategica.")}</p>
+      </div>
+      ${renderStrategicPriorityList(model.prioritize.sprintPriority, model.prioritize.currentSprint)}
     `, model, { wide: true, advancedMode: isAdvancedLayoutMode(model, options) }),
     frogs: layoutCard("prioritize", "frogs", "Sapo do dia e da semana", `
       <div class="stack-list compact-stack">
@@ -1559,7 +1631,10 @@ function renderPlanningPage(model, options = {}) {
               </div>
               ${badge(sprint.status === "current" ? "Ativo" : "Livre", sprint.status === "current" ? "success" : "")}
             </div>
+            ${sprint.objective ? `<p class="muted-copy"><strong>Objetivo:</strong> ${escapeHtml(sprint.objective)}</p>` : ""}
             ${sprint.priorities?.length ? `<div class="meta-row">${metaPills(sprint.priorities)}</div>` : ""}
+            ${sprint.strategicWeightPills?.length ? `<div class="meta-row">${metaPills(sprint.strategicWeightPills)}</div>` : ""}
+            ${sprint.goals?.length ? `<p class="muted-copy">${escapeHtml(sprint.goals.slice(0, 2).join(" • "))}</p>` : ""}
             <div class="meta-row">${metaPills([
               sprint.projectNames?.length ? `Projetos: ${sprint.projectNames.join(", ")}` : "",
               sprint.objectiveTitles?.length ? `Objetivos: ${sprint.objectiveTitles.length}` : "",
@@ -1845,13 +1920,16 @@ function renderEditorModal(editorView, options) {
   const bucketOptions = options.buckets.map((bucket) => `<option value="${bucket.id}" ${entity.finalBucket === bucket.id ? "selected" : ""}>${escapeHtml(bucket.label)}</option>`).join("");
   const gtdOptions = ["Processar", "Executar", "Agendar", "Delegar", "Aguardar", "Backlog", "Projeto", "Descartar", "Modelo"].map((decision) => `<option value="${decision}" ${entity.gtdDecision === decision ? "selected" : ""}>${escapeHtml(decision)}</option>`).join("");
   const actions = entity.id ? `<div class="toolbar-row"><button class="ghost-button" type="button" data-action="duplicate-entity" data-kind="${kind}" data-id="${entity.id}">Duplicar</button><button class="ghost-button danger" type="button" data-action="delete-entity" data-kind="${kind}" data-id="${entity.id}">Excluir</button></div>` : "";
-  const taskFields = `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" required /></label><label class="field"><span>Checklist / proximas acoes</span><textarea name="subtasks">${escapeHtml((entity.subtasks || []).join("\n"))}</textarea></label><div class="field-grid two"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Projeto</span><select name="projectId"><option value="">Sem projeto</option>${projectOptions}</select></label></div><div class="field-grid three"><label class="field"><span>Objetivo</span><select name="objectiveId"><option value="">Sem objetivo</option>${objectiveOptions}</select></label><label class="field"><span>Sprint</span><select name="sprintId"><option value="">Sem sprint</option>${sprintOptions}</select></label><label class="field"><span>Contexto</span><input name="context" value="${escapeHtml(entity.context || "")}" /></label></div><div class="field-grid four"><label class="field"><span>Periodo</span><select name="scheduledPeriod">${periodOptions}</select></label><label class="field"><span>Prioridade</span><input name="priority" value="${escapeHtml(entity.priority || "medium")}" /></label><label class="field"><span>Impacto</span><input type="number" name="impact" value="${escapeHtml(entity.impact || 3)}" /></label><label class="field"><span>Urgencia</span><input type="number" name="urgency" value="${escapeHtml(entity.urgency || 3)}" /></label></div><div class="field-grid four"><label class="field"><span>Esforco</span><input type="number" name="effort" value="${escapeHtml(entity.effort || 3)}" /></label><label class="field"><span>Duracao</span><input type="number" name="estimatedMinutes" value="${escapeHtml(entity.estimatedMinutes || 30)}" /></label><label class="field"><span>GTD</span><select name="gtdDecision"><option value="">Automatica</option>${gtdOptions}</select></label><label class="field"><span>Bucket</span><select name="finalBucket"><option value="">Automatico</option>${bucketOptions}</select></label></div><div class="field-grid four"><label class="field"><span>Modo de prioridade</span><select name="priorityMode"><option value="auto" ${entity.priorityMode !== "manual" ? "selected" : ""}>Automatica</option><option value="manual" ${entity.priorityMode === "manual" ? "selected" : ""}>Manual</option></select></label><label class="field"><span>Dia</span><input type="date" name="scheduledDate" value="${escapeHtml(entity.scheduledDate || "")}" /></label><label class="field"><span>Prazo</span><input type="date" name="dueDate" value="${escapeHtml(entity.dueDate || "")}" /></label><label class="field"><span>Ajuste de score</span><input type="number" name="scoreAdjustment" value="${escapeHtml(entity.scoreAdjustment || 0)}" /></label></div><label class="field"><span>Proxima acao</span><textarea name="nextAction">${escapeHtml(entity.nextAction || "")}</textarea></label><label class="field"><span>Observacoes</span><textarea name="notes">${escapeHtml(entity.notes || "")}</textarea></label><div class="checkbox-row"><label><input type="checkbox" name="critical" ${entity.critical ? "checked" : ""}/> Critica</label><label><input type="checkbox" name="delegable" ${entity.delegable ? "checked" : ""}/> Delegavel</label><label><input type="checkbox" name="isRecurring" ${entity.isRecurring ? "checked" : ""}/> Recorrente</label><label><input type="checkbox" name="isTemplate" ${entity.isTemplate ? "checked" : ""}/> Modelo</label><label><input type="checkbox" name="manualDecision" ${entity.manualDecision ? "checked" : ""}/> Decisao manual</label></div>`;
+  const taskStrategicInsight = entity?.strategicPriorityReason
+    ? `<div class="callout success"><strong>${escapeHtml(entity.strategicSprintTitle || "Leitura estrategica")}</strong><p>${escapeHtml(entity.strategicPriorityReason)}</p><div class="meta-row">${metaPills([entity.strategicTheme ? `Tema ${entity.strategicTheme}` : "", entity.strategicWeight ? `Peso ${entity.strategicWeight}` : "", entity.score ? `Score ${entity.score}` : ""])}</div></div>`
+    : "";
+  const taskFields = `${taskStrategicInsight}<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" required /></label><label class="field"><span>Checklist / proximas acoes</span><textarea name="subtasks">${escapeHtml((entity.subtasks || []).join("\n"))}</textarea></label><div class="field-grid two"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Projeto</span><select name="projectId"><option value="">Sem projeto</option>${projectOptions}</select></label></div><div class="field-grid three"><label class="field"><span>Objetivo</span><select name="objectiveId"><option value="">Sem objetivo</option>${objectiveOptions}</select></label><label class="field"><span>Sprint</span><select name="sprintId"><option value="">Sem sprint</option>${sprintOptions}</select></label><label class="field"><span>Contexto</span><input name="context" value="${escapeHtml(entity.context || "")}" /></label></div><div class="field-grid four"><label class="field"><span>Periodo</span><select name="scheduledPeriod">${periodOptions}</select></label><label class="field"><span>Prioridade</span><input name="priority" value="${escapeHtml(entity.priority || "medium")}" /></label><label class="field"><span>Impacto</span><input type="number" name="impact" value="${escapeHtml(entity.impact || 3)}" /></label><label class="field"><span>Urgencia</span><input type="number" name="urgency" value="${escapeHtml(entity.urgency || 3)}" /></label></div><div class="field-grid four"><label class="field"><span>Esforco</span><input type="number" name="effort" value="${escapeHtml(entity.effort || 3)}" /></label><label class="field"><span>Duracao</span><input type="number" name="estimatedMinutes" value="${escapeHtml(entity.estimatedMinutes || 30)}" /></label><label class="field"><span>GTD</span><select name="gtdDecision"><option value="">Automatica</option>${gtdOptions}</select></label><label class="field"><span>Bucket</span><select name="finalBucket"><option value="">Automatico</option>${bucketOptions}</select></label></div><div class="field-grid four"><label class="field"><span>Modo de prioridade</span><select name="priorityMode"><option value="auto" ${entity.priorityMode !== "manual" ? "selected" : ""}>Automatica</option><option value="manual" ${entity.priorityMode === "manual" ? "selected" : ""}>Manual</option></select></label><label class="field"><span>Dia</span><input type="date" name="scheduledDate" value="${escapeHtml(entity.scheduledDate || "")}" /></label><label class="field"><span>Prazo</span><input type="date" name="dueDate" value="${escapeHtml(entity.dueDate || "")}" /></label><label class="field"><span>Ajuste de score</span><input type="number" name="scoreAdjustment" value="${escapeHtml(entity.scoreAdjustment || 0)}" /></label></div><label class="field"><span>Proxima acao</span><textarea name="nextAction">${escapeHtml(entity.nextAction || "")}</textarea></label><label class="field"><span>Observacoes</span><textarea name="notes">${escapeHtml(entity.notes || "")}</textarea></label><div class="checkbox-row"><label><input type="checkbox" name="critical" ${entity.critical ? "checked" : ""}/> Critica</label><label><input type="checkbox" name="delegable" ${entity.delegable ? "checked" : ""}/> Delegavel</label><label><input type="checkbox" name="isRecurring" ${entity.isRecurring ? "checked" : ""}/> Recorrente</label><label><input type="checkbox" name="isTemplate" ${entity.isTemplate ? "checked" : ""}/> Modelo</label><label><input type="checkbox" name="manualDecision" ${entity.manualDecision ? "checked" : ""}/> Decisao manual</label></div>`;
   const fieldMap = {
     task: taskFields,
     area: `<label class="field"><span>Nome</span><input name="name" value="${escapeHtml(entity.name || "")}" /></label><div class="field-grid two"><label class="field"><span>Tipo</span><input name="type" value="${escapeHtml(entity.type || "life")}" /></label><label class="field"><span>Cor</span><input name="color" value="${escapeHtml(entity.color || "")}" /></label></div><label class="field"><span>Descricao</span><textarea name="description">${escapeHtml(entity.description || "")}</textarea></label>`,
     project: `<label class="field"><span>Nome</span><input name="name" value="${escapeHtml(entity.name || "")}" /></label><div class="field-grid three"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Status</span><input name="status" value="${escapeHtml(entity.status || "active")}" /></label><label class="field"><span>Template</span><select name="templateId">${options.projectTemplates.map((template) => `<option value="${template.id}" ${entity.templateId === template.id ? "selected" : ""}>${escapeHtml(template.label)}</option>`).join("")}</select></label></div><div class="field-grid three"><label class="field"><span>Tipo</span><input name="projectType" value="${escapeHtml(entity.projectType || "")}" /></label><label class="field"><span>Prazo</span><input type="date" name="dueDate" value="${escapeHtml(entity.dueDate || "")}" /></label><label class="field"><span>Prioridade</span><select name="priority"><option value="low" ${entity.priority === "low" ? "selected" : ""}>Baixa</option><option value="medium" ${entity.priority === "medium" ? "selected" : ""}>Media</option><option value="high" ${entity.priority === "high" ? "selected" : ""}>Alta</option></select></label></div><label class="field"><span>Sprint</span><select name="sprintId"><option value="">Sem sprint</option>${sprintOptions}</select></label><label class="field"><span>Resumo</span><textarea name="summary">${escapeHtml(entity.summary || "")}</textarea></label><label class="field"><span>Descricao</span><textarea name="description">${escapeHtml(entity.description || "")}</textarea></label><label class="field"><span>Objetivo principal</span><textarea name="objective">${escapeHtml(entity.objective || "")}</textarea></label>`,
     objective: `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><div class="field-grid three"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Projeto</span><select name="projectId"><option value="">Sem projeto</option>${projectOptions}</select></label><label class="field"><span>Progresso</span><input type="number" name="progress" value="${escapeHtml(entity.progress || 0)}" /></label></div><label class="field"><span>Prazo</span><input type="date" name="dueDate" value="${escapeHtml(entity.dueDate || "")}" /></label><label class="field"><span>Descricao</span><textarea name="description">${escapeHtml(entity.description || "")}</textarea></label>`,
-    sprint: `<div class="field-grid two"><label class="field"><span>Nome</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><label class="field"><span>Slot</span><select name="slot">${[1, 2, 3, 4].map((slot) => `<option value="${slot}" ${Number(entity.slot) === slot ? "selected" : ""}>Sprint ${slot}</option>`).join("")}</select></label></div><div class="field-grid three"><label class="field"><span>Inicio</span><input type="date" name="startDate" value="${escapeHtml(entity.startDate || "")}" /></label><label class="field"><span>Fim</span><input type="date" name="endDate" value="${escapeHtml(entity.endDate || "")}" /></label><label class="field"><span>Status</span><select name="status"><option value="planned" ${entity.status === "planned" ? "selected" : ""}>Planejado</option><option value="upcoming" ${entity.status === "upcoming" ? "selected" : ""}>Proximo</option><option value="current" ${entity.status === "current" ? "selected" : ""}>Atual</option></select></label></div><label class="field"><span>Periodo</span><input name="periodLabel" value="${escapeHtml(entity.periodLabel || "")}" /></label><label class="field"><span>Descricao</span><textarea name="description">${escapeHtml(entity.description || entity.theme || "")}</textarea></label><label class="field"><span>Prioridades do sprint</span><textarea name="priorities">${escapeHtml((entity.priorities || []).join("\n"))}</textarea></label><label class="field"><span>Projetos relacionados</span><textarea name="projectIds">${escapeHtml((entity.projectIds || []).join("\n"))}</textarea></label><label class="field"><span>Objetivos relacionados</span><textarea name="objectiveIds">${escapeHtml((entity.objectiveIds || []).join("\n"))}</textarea></label><label class="field"><span>Palavras-chave do sprint</span><textarea name="keywords">${escapeHtml((entity.keywords || []).join("\n"))}</textarea></label><label class="field"><span>Areas priorizadas</span><textarea name="priorityAreas">${escapeHtml((entity.priorityAreas || []).join("\n"))}</textarea></label>`,
+    sprint: `<div class="field-grid two"><label class="field"><span>Nome</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><label class="field"><span>Slot</span><select name="slot">${[1, 2, 3, 4].map((slot) => `<option value="${slot}" ${Number(entity.slot) === slot ? "selected" : ""}>Sprint ${slot}</option>`).join("")}</select></label></div><div class="field-grid three"><label class="field"><span>Inicio</span><input type="date" name="startDate" value="${escapeHtml(entity.startDate || "")}" /></label><label class="field"><span>Fim</span><input type="date" name="endDate" value="${escapeHtml(entity.endDate || "")}" /></label><label class="field"><span>Status</span><select name="status"><option value="planned" ${entity.status === "planned" ? "selected" : ""}>Planejado</option><option value="upcoming" ${entity.status === "upcoming" ? "selected" : ""}>Proximo</option><option value="current" ${entity.status === "current" ? "selected" : ""}>Atual</option></select></label></div><label class="field"><span>Periodo</span><input name="periodLabel" value="${escapeHtml(entity.periodLabel || "")}" /></label><label class="field"><span>Objetivo estrategico</span><textarea name="objective">${escapeHtml(entity.objective || "")}</textarea></label><label class="field"><span>Descricao</span><textarea name="description">${escapeHtml(entity.description || entity.theme || "")}</textarea></label><label class="field"><span>Metas do sprint</span><textarea name="goals">${escapeHtml((entity.goals || []).join("\n"))}</textarea></label><label class="field"><span>Prioridades do sprint</span><textarea name="priorities">${escapeHtml((entity.priorities || []).join("\n"))}</textarea></label><label class="field"><span>Pesos estrategicos (tema: peso)</span><textarea name="strategicWeights">${escapeHtml(Object.entries(entity.strategicWeights || {}).map(([theme, weight]) => `${theme}: ${weight}`).join("\n"))}</textarea></label><label class="field"><span>Projetos relacionados</span><textarea name="projectIds">${escapeHtml((entity.projectIds || []).join("\n"))}</textarea></label><label class="field"><span>Objetivos relacionados</span><textarea name="objectiveIds">${escapeHtml((entity.objectiveIds || []).join("\n"))}</textarea></label><label class="field"><span>Palavras-chave do sprint</span><textarea name="keywords">${escapeHtml((entity.keywords || []).join("\n"))}</textarea></label><label class="field"><span>Areas priorizadas</span><textarea name="priorityAreas">${escapeHtml((entity.priorityAreas || []).join("\n"))}</textarea></label>`,
     habit: `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><div class="field-grid two"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Meta semanal</span><input type="number" name="targetPerWeek" value="${escapeHtml(entity.targetPerWeek || 3)}" /></label></div><label class="field"><span>Dias preferidos</span><input name="preferredWeekdays" value="${escapeHtml((entity.preferredWeekdays || []).join(", "))}" /></label><label class="field"><span>Nota</span><textarea name="note">${escapeHtml(entity.note || "")}</textarea></label>`,
     block: `<label class="field"><span>Titulo</span><input name="title" value="${escapeHtml(entity.title || "")}" /></label><div class="field-grid three"><label class="field"><span>Area</span><select name="areaId">${areaOptions}</select></label><label class="field"><span>Data</span><input type="date" name="date" value="${escapeHtml(entity.date || "")}" /></label><label class="field"><span>Periodo</span><select name="period">${periodOptions}</select></label></div><div class="field-grid two"><label class="field"><span>Inicio</span><input type="time" name="startTime" value="${escapeHtml(entity.startTime || "09:00")}" /></label><label class="field"><span>Fim</span><input type="time" name="endTime" value="${escapeHtml(entity.endTime || "10:00")}" /></label></div><label class="field"><span>Tipo</span><input name="kind" value="${escapeHtml(entity.kind || "focus")}" /></label><label class="field"><span>Nota</span><textarea name="note">${escapeHtml(entity.note || "")}</textarea></label>`,
     "day-override": `<label class="field"><span>Data</span><input type="date" name="date" value="${escapeHtml(entity.date || "")}" /></label><label class="field"><span>Tipo de dia</span><select name="typeId">${dayTypeOptions}</select></label><label class="field"><span>Nota</span><textarea name="note">${escapeHtml(entity.note || "")}</textarea></label>`,

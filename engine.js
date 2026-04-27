@@ -13,6 +13,8 @@ import {
   getWeekDates,
   getWeekdayKey,
 } from "./date.js";
+import { evaluateStrategicPriority } from "./strategic-priority.js";
+import { STRATEGIC_THEME_LABELS, getStrategicSprint2026ById } from "./strategic-sprints-2026.js";
 
 const DEFAULT_FILTERS = {
   scope: "integrated",
@@ -225,6 +227,7 @@ const DEFAULT_LAYOUTS = {
   ],
   prioritize: [
     { id: "pipeline", width: "full", height: "regular", frame: null },
+    { id: "sprint", width: "full", height: "regular", frame: null },
     { id: "frogs", width: "medium", height: "regular", frame: null },
     { id: "auto", width: "medium", height: "regular", frame: null },
     { id: "ranked", width: "full", height: "tall", frame: null },
@@ -1731,12 +1734,42 @@ function getSprintRangeForSlot(slot, year) {
   return ranges[slot] || ranges[1];
 }
 
+function normalizeStrategicWeights(value = {}, existing = {}) {
+  if (typeof value === "string") {
+    const parsed = Object.fromEntries(
+      value
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          const [rawKey, rawWeight] = line.split(":");
+          return [String(rawKey || "").trim(), Number(String(rawWeight || "").trim())];
+        })
+        .filter(([key, weight]) => key && Number.isFinite(weight)),
+    );
+
+    return normalizeStrategicWeights(parsed, existing);
+  }
+
+  const source = {
+    ...(existing && typeof existing === "object" ? existing : {}),
+    ...(value && typeof value === "object" ? value : {}),
+  };
+
+  return Object.fromEntries(
+    Object.entries(source)
+      .filter(([, weight]) => Number.isFinite(Number(weight)))
+      .map(([key, weight]) => [key, Number(weight)]),
+  );
+}
+
 function normalizeSprintPayload(payload = {}, existing = null, index = 0, referenceYear = getCurrentYear()) {
   const slot = inferSprintSlot(payload, index);
   const range = getSprintRangeForSlot(slot, referenceYear);
   const existingPriorities = existing?.priorities || existing?.keyResults || [];
   const existingProjects = existing?.projectIds || [];
   const existingKeywords = existing?.keywords || [];
+  const existingGoals = existing?.goals || existing?.metas || [];
 
   return {
     id: payload.id || existing?.id || `sprint-${slot}-${referenceYear}`,
@@ -1747,11 +1780,14 @@ function normalizeSprintPayload(payload = {}, existing = null, index = 0, refere
     periodLabel: payload.periodLabel || existing?.periodLabel || range.periodLabel,
     description: payload.description || payload.theme || existing?.description || existing?.theme || "",
     theme: payload.theme || payload.description || existing?.theme || existing?.description || "",
+    objective: payload.objective || existing?.objective || payload.theme || payload.description || existing?.theme || existing?.description || "",
+    goals: parseLines(payload.goals || payload.metas, existingGoals),
     objectiveIds: parseIdList(payload.objectiveIds, existing?.objectiveIds || []),
     projectIds: parseIdList(payload.projectIds, existingProjects),
     priorities: parseLines(payload.priorities, existingPriorities),
     keywords: parseLines(payload.keywords, existingKeywords),
     priorityAreas: parseIdList(payload.priorityAreas, existing?.priorityAreas || []),
+    strategicWeights: normalizeStrategicWeights(payload.strategicWeights || payload.weights, existing?.strategicWeights || existing?.weights || {}),
     status: payload.status || existing?.status || "planned",
     createdAt: existing?.createdAt || payload.createdAt || nowIso(),
     updatedAt: payload.updatedAt || nowIso(),
@@ -1764,15 +1800,23 @@ function normalizeSprints(source = [], referenceYear = getCurrentYear()) {
     : [];
   const bySlot = new Map(normalized.map((sprint) => [sprint.slot, sprint]));
 
-  for (let slot = 1; slot <= 4; slot += 1) {
+  const maxSlot = Math.max(
+    normalized.length ? 0 : 4,
+    ...normalized.map((sprint) => Number(sprint.slot) || 0),
+  );
+
+  for (let slot = 1; slot <= Math.max(1, maxSlot); slot += 1) {
     if (!bySlot.has(slot)) {
       const placeholder = normalizeSprintPayload({
         id: `sprint-${slot}-${referenceYear}`,
         slot,
         title: `Sprint ${slot}`,
         description: "Defina o tema, as prioridades e os projetos relacionados.",
+        objective: "Defina o objetivo estrategico deste sprint.",
+        goals: [],
         priorities: [],
         keywords: [],
+        strategicWeights: {},
       }, null, slot - 1, referenceYear);
       bySlot.set(slot, placeholder);
     }
@@ -1999,6 +2043,12 @@ function evaluateSprintFit(task, state) {
     reasons.push("se conecta com uma prioridade declarada do sprint");
   }
 
+  const strategic = evaluateStrategicPriority(task, state, state.ui?.selectedDate || getCurrentISODate(), task.scheduledPeriod || task.period || "afternoon");
+  if (strategic.matched) {
+    strength += Math.max(1, Math.ceil(strategic.weight / 3));
+    reasons.push(strategic.summaryReason);
+  }
+
   return {
     currentSprint,
     matched: strength > 0,
@@ -2012,6 +2062,7 @@ function classifyTask(task, state, referenceDate, flags) {
   const dueDelta = task.dueDate ? differenceInDays(task.dueDate, referenceDate) : 99;
   const scheduledDelta = task.scheduledDate ? differenceInDays(task.scheduledDate, referenceDate) : 99;
   const sprintFit = evaluateSprintFit(task, state);
+  const strategic = evaluateStrategicPriority(task, state, referenceDate, guessPeriod(task));
 
   if (isTemplateTask(task)) {
     return {
@@ -2127,6 +2178,7 @@ function classifyTask(task, state, referenceDate, flags) {
   if (
     sprintFit.currentSprint
     && !sprintFit.matched
+    && !strategic.matched
     && task.location !== "backlog"
     && !task.scheduledDate
     && dueDelta > 3
@@ -2141,6 +2193,10 @@ function classifyTask(task, state, referenceDate, flags) {
 
   if (sprintFit.matched) {
     reasons.push(...sprintFit.reasons);
+  }
+
+  if (strategic.matched) {
+    reasons.push(strategic.summaryReason);
   }
 
   return {
@@ -2208,6 +2264,7 @@ function scoreTask(task, state, referenceDate, dayProfile, gtd, flags, method) {
   const dueDelta = task.dueDate ? differenceInDays(task.dueDate, referenceDate) : 99;
   const scheduledDelta = task.scheduledDate ? differenceInDays(task.scheduledDate, referenceDate) : 99;
   const sprintFit = evaluateSprintFit(task, state);
+  const strategic = evaluateStrategicPriority(task, state, referenceDate, guessPeriod(task));
   let score = PRIORITY_BASE[task.priority] || 30;
 
   score += toNumber(task.impact, 3) * 8;
@@ -2231,6 +2288,11 @@ function scoreTask(task, state, referenceDate, dayProfile, gtd, flags, method) {
   } else if (sprintFit.currentSprint && dueDelta > 2 && toNumber(task.urgency, 3) <= 3) {
     score -= 8;
     reasons.push("fora do foco do sprint atual");
+  }
+
+  if (strategic.matched || strategic.scoreDelta !== 0) {
+    score += strategic.scoreDelta;
+    reasons.push(...strategic.reasons);
   }
 
   if (task.critical) {
@@ -2360,6 +2422,7 @@ function enrichTask(task, state, referenceDate, method = state.ui.priorityMethod
     reasons: autoGtd.reasons,
   };
   const scored = scoreTask(task, state, referenceDate, dayProfile, gtd, flags, method);
+  const strategic = evaluateStrategicPriority(task, state, referenceDate, guessPeriod(task));
   const dueDelta = task.dueDate ? differenceInDays(task.dueDate, referenceDate) : 99;
   const scheduledDelta = task.scheduledDate ? differenceInDays(task.scheduledDate, referenceDate) : 99;
 
@@ -2382,6 +2445,15 @@ function enrichTask(task, state, referenceDate, method = state.ui.priorityMethod
     priorityMode: manualPriority ? "manual" : "auto",
     score: scored.score,
     reasons: scored.reasons,
+    strategicSprintId: strategic.sprintId || sprint?.id || "",
+    strategicSprintTitle: strategic.sprintTitle || sprint?.title || "",
+    strategicTheme: strategic.primaryTheme || "",
+    strategicThemeId: strategic.primaryThemeId || "",
+    strategicWeight: strategic.weight || 0,
+    strategicPriorityLevel: strategic.level || "baixa",
+    strategicPriorityReason: strategic.summaryReason || "",
+    strategicReasons: strategic.reasons || [],
+    strategicDownranked: Boolean(strategic.downrankedForLowWeight),
     suggestions: buildSuggestions(task, gtd, scored.score, referenceDate, dayProfile),
     scheduledLabel: task.scheduledDate ? formatShortDate(task.scheduledDate) : "",
     dueLabel: task.dueDate ? formatShortDate(task.dueDate) : "",
@@ -2806,6 +2878,7 @@ function buildTodayChecklistModel(state, tasks, selectedDate, weekData) {
 
 function buildDashboardModel(state, tasks, selectedDate, weekData) {
   const currentSprint = state.sprints.find((sprint) => sprint.status === "current") || null;
+  const strategicSprint = getStrategicSprint2026ById(currentSprint?.id || "") || null;
   const sprintObjectives = currentSprint
     ? state.objectives.filter((objective) => currentSprint.objectiveIds.includes(objective.id))
     : [];
@@ -2814,10 +2887,26 @@ function buildDashboardModel(state, tasks, selectedDate, weekData) {
     : 0;
   const moveDeadline = state.profile.moveDeadline || selectedDate;
   const weekOverload = weekData.days.filter((day) => day.overload).length;
+  const sprintPriorityTasks = [...tasks]
+    .filter((task) => task.strategicSprintId === currentSprint?.id && task.strategicWeight >= 6)
+    .sort((left, right) => right.strategicWeight - left.strategicWeight || sortByScore(left, right))
+    .slice(0, 4);
+  const strategicWeightPills = Object.entries(currentSprint?.strategicWeights || strategicSprint?.weights || {})
+    .sort((left, right) => Number(right[1]) - Number(left[1]))
+    .slice(0, 4)
+    .map(([themeId, weight]) => `${STRATEGIC_THEME_LABELS?.[themeId] || themeId}: ${weight}`);
 
   return {
     currentSprint: currentSprint
-      ? { title: currentSprint.title, progress: sprintProgress, theme: currentSprint.theme }
+      ? {
+        title: currentSprint.title,
+        progress: sprintProgress,
+        theme: currentSprint.theme,
+        objective: currentSprint.objective || strategicSprint?.objective || "",
+        goals: currentSprint.goals || strategicSprint?.goals || [],
+        priorities: currentSprint.priorities || strategicSprint?.priorities || [],
+        strategicWeights: currentSprint.strategicWeights || strategicSprint?.weights || {},
+      }
       : null,
     weekProgress: {
       done: state.tasks.filter((task) => task.status === "done" && weekData.dates.includes(task.scheduledDate)).length,
@@ -2838,6 +2927,8 @@ function buildDashboardModel(state, tasks, selectedDate, weekData) {
     alerts: tasks.filter((task) => task.manualDecision || task.location === "alert").slice(0, 4),
     areaSummaries: buildAreaSummaries(state, tasks),
     projectSummaries: buildProjectSummaries(state, tasks),
+    sprintPriorityTasks,
+    strategicWeightPills,
     load: {
       total: weekData.totalLoad,
       capacity: weekData.totalCapacity,
@@ -2846,8 +2937,9 @@ function buildDashboardModel(state, tasks, selectedDate, weekData) {
   };
 }
 
-function buildPrioritizeModel(tasks, selectedDate) {
+function buildPrioritizeModel(tasks, selectedDate, state) {
   const ranked = [...tasks].sort(sortByScore);
+  const currentSprint = state.sprints.find((sprint) => sprint.status === "current") || null;
   const stageMap = new Map();
 
   ranked.forEach((task) => {
@@ -2860,6 +2952,11 @@ function buildPrioritizeModel(tasks, selectedDate) {
 
   return {
     ranked: ranked.slice(0, 12),
+    sprintPriority: ranked
+      .filter((task) => task.strategicSprintId === currentSprint?.id && (task.strategicWeight >= 6 || task.strategicPriorityLevel === "alta" || task.strategicPriorityLevel === "maxima"))
+      .sort((left, right) => right.strategicWeight - left.strategicWeight || sortByScore(left, right))
+      .slice(0, 8),
+    currentSprint,
     dayFrog: ranked.find((task) => task.frogDay) || null,
     weekFrog: ranked.find((task) => task.frogWeek) || null,
     autoPilot: ranked.slice(0, 5).map((task) => ({
@@ -2870,6 +2967,9 @@ function buildPrioritizeModel(tasks, selectedDate) {
       reasons: task.reasons,
       nextAction: task.nextAction,
       priorityMode: task.priorityMode || "auto",
+      strategicSprintTitle: task.strategicSprintTitle || "",
+      strategicWeight: task.strategicWeight || 0,
+      strategicPriorityReason: task.strategicPriorityReason || "",
     })),
     stages: [
       "Processar",
@@ -2944,6 +3044,9 @@ function buildPlanningModel(state, tasks) {
     ...sprint,
     projectNames: sprint.projectIds.map((projectId) => getProjectById(state, projectId)?.name).filter(Boolean),
     objectiveTitles: sprint.objectiveIds.map((objectiveId) => getObjectiveById(state, objectiveId)?.title).filter(Boolean),
+    strategicWeightPills: Object.entries(sprint.strategicWeights || {})
+      .sort((left, right) => Number(right[1]) - Number(left[1]))
+      .map(([themeId, weight]) => `${STRATEGIC_THEME_LABELS?.[themeId] || themeId}: ${weight}`),
   }));
 
   return {
@@ -3106,7 +3209,10 @@ function buildEditorView(state) {
       return blankEntity(kind, state);
     }
 
-    if (kind === "task") return getTaskById(state, id) || blankEntity(kind, state);
+    if (kind === "task") {
+      const task = getTaskById(state, id);
+      return task ? enrichTask(task, state, state.ui.selectedDate || getCurrentISODate()) : blankEntity(kind, state);
+    }
     if (kind === "area") return state.areas.find((entry) => entry.id === id) || blankEntity(kind, state);
     if (kind === "project") return state.projects.find((entry) => entry.id === id) || blankEntity(kind, state);
     if (kind === "objective") return state.objectives.find((entry) => entry.id === id) || blankEntity(kind, state);
@@ -3146,7 +3252,7 @@ export function buildAppModel(inputState, referenceDate = new Date()) {
   const weekData = buildWeekData(state, filteredTasks, selectedDate);
   const selectedDay = weekData.days.find((day) => day.date === selectedDate) || buildDaySnapshot(state, filteredTasks, selectedDate);
   const dashboard = buildDashboardModel(state, filteredTasks, selectedDate, weekData);
-  const prioritize = buildPrioritizeModel(filteredTasks, selectedDate);
+  const prioritize = buildPrioritizeModel(filteredTasks, selectedDate, state);
   const organize = buildOrganizeModel(filteredTasks);
   const inbox = buildInboxModel(filteredTasks);
   const settings = buildSettingsModel(state);
@@ -3925,9 +4031,10 @@ export function captureInboxTask(state, transcript, referenceDate = getCurrentIS
   const currentSprint = nextState.sprints.find((sprint) => sprint.status === "current") || null;
   const previewTask = normalizeTaskPayload(nextState, basePayload, null);
   const sprintFit = evaluateSprintFit(previewTask, nextState);
+  const strategic = evaluateStrategicPriority(previewTask, nextState, referenceDate, previewTask.scheduledPeriod || guessPeriod(previewTask));
   const task = normalizeTaskPayload(nextState, {
     ...basePayload,
-    sprintId: sprintFit.matched && currentSprint ? currentSprint.id : "",
+    sprintId: (sprintFit.matched || strategic.matched) && currentSprint ? currentSprint.id : "",
   }, null);
 
   nextState.tasks.unshift(task);
@@ -3941,7 +4048,7 @@ export function captureInboxTask(state, transcript, referenceDate = getCurrentIS
     nextState,
     task,
     draft,
-    message: sprintFit.matched
+    message: (sprintFit.matched || strategic.matched)
       ? "Captura salva na Inbox com leitura do sprint atual."
       : "Captura salva na Inbox.",
   };
@@ -3949,12 +4056,22 @@ export function captureInboxTask(state, transcript, referenceDate = getCurrentIS
 
 export function addInboxTask(state, payload) {
   const nextState = cloneState(state);
+  const currentSprint = nextState.sprints.find((sprint) => sprint.status === "current") || null;
+  const previewTask = normalizeTaskPayload(nextState, {
+    ...payload,
+    subtasks: payload.checklist || payload.subtasks || [],
+    location: "inbox",
+    status: "inbox",
+    source: payload.source || "capture",
+  }, null);
+  const strategic = evaluateStrategicPriority(previewTask, nextState, nextState.ui.selectedDate || getCurrentISODate(), previewTask.scheduledPeriod || guessPeriod(previewTask));
   const task = normalizeTaskPayload(nextState, {
     ...payload,
     subtasks: payload.checklist || payload.subtasks || [],
     location: "inbox",
     status: "inbox",
-    source: "capture",
+    sprintId: payload.sprintId || (strategic.matched && currentSprint ? currentSprint.id : ""),
+    source: payload.source || "capture",
   }, null);
   nextState.tasks.unshift(task);
   pushHistory(nextState, "task-captured", `Nova tarefa capturada: ${task.title}`);
