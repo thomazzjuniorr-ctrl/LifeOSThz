@@ -122,23 +122,23 @@ Fluxo recomendado agora:
 
 1. publicar na Vercel
 2. criar um projeto no Supabase e a tabela `life_os_snapshots`
-3. configurar Supabase em `Configuracoes` no desktop
-4. usar `Copiar perfil`
-5. no mobile, usar `Importar perfil`
-6. usar `Sincronizar agora` na primeira conexao nos dois dispositivos
+3. configurar as variaveis de ambiente da Vercel uma vez
+4. redeployar
+5. abrir o app no mobile e no desktop
+6. os dois passam a usar o mesmo workspace automaticamente
 
 Diagnostico resumido:
 
 - sem sync configurado, cada dispositivo usa apenas `IndexedDB` ou `localStorage`
 - por isso celular e desktop ficam isolados
-- a sincronizacao real acontece quando os dois usam o mesmo `workspace key` no Supabase
+- a sincronizacao automatica agora pode acontecer pelo proprio deploy, via `/api/sync`
 - o merge agora e nao destrutivo: atividades ja existentes no dispositivo permanecem e passam a ser espelhadas
 
 Seguranca:
 
-- `anon key` do Supabase pode ficar no frontend
-- `service role key` nunca deve ir para o GitHub ou para a Vercel frontend
-- o ideal e preencher a `workspace key` pelo proprio app, nao dentro do repositório
+- `anon key` publica so e necessaria se voce optar pelo modo manual avancado
+- `service role key` fica apenas na Vercel, nunca no frontend
+- o workspace automatico pode ser definido uma vez no deploy
 
 Guia:
 

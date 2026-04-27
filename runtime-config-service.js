@@ -22,11 +22,14 @@ const defaultRuntimeConfig = {
   },
   sync: {
     enabled: false,
-    provider: "supabase",
+    managedByRuntime: false,
+    provider: "vercel-proxy",
+    apiBaseUrl: "/api/sync",
     projectUrl: "",
     anonKey: "",
     tableName: "life_os_snapshots",
     workspaceKey: "",
+    workspaceId: "",
     pollIntervalSeconds: 20,
   },
   pwa: {

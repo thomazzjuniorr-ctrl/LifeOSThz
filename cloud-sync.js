@@ -2,11 +2,14 @@ import { getRuntimeConfig } from "./runtime-config-service.js";
 
 const DEFAULT_SYNC_CONFIG = {
   enabled: false,
-  provider: "supabase",
+  managedByRuntime: false,
+  provider: "vercel-proxy",
+  apiBaseUrl: "/api/sync",
   projectUrl: "",
   anonKey: "",
   tableName: "life_os_snapshots",
   workspaceKey: "",
+  workspaceId: "",
   pollIntervalSeconds: 20,
   lastSyncedAt: "",
   lastPulledAt: "",
@@ -90,10 +93,14 @@ export function getCloudSyncDefaults() {
     ...DEFAULT_SYNC_CONFIG,
     ...runtimeSync,
     enabled: toBoolean(runtimeSync.enabled, DEFAULT_SYNC_CONFIG.enabled),
+    managedByRuntime: toBoolean(runtimeSync.managedByRuntime, DEFAULT_SYNC_CONFIG.managedByRuntime),
+    provider: String(runtimeSync.provider || DEFAULT_SYNC_CONFIG.provider).trim() || DEFAULT_SYNC_CONFIG.provider,
+    apiBaseUrl: cleanUrl(runtimeSync.apiBaseUrl || runtimeSync.endpoint || DEFAULT_SYNC_CONFIG.apiBaseUrl),
     projectUrl: cleanUrl(runtimeSync.projectUrl || runtimeSync.url || ""),
     anonKey: String(runtimeSync.anonKey || runtimeSync.publishableKey || runtimeSync.apiKey || "").trim(),
     tableName: String(runtimeSync.tableName || DEFAULT_SYNC_CONFIG.tableName).trim() || DEFAULT_SYNC_CONFIG.tableName,
     workspaceKey: String(runtimeSync.workspaceKey || "").trim(),
+    workspaceId: String(runtimeSync.workspaceId || runtimeSync.workspaceKey || "").trim(),
     pollIntervalSeconds: toNumber(runtimeSync.pollIntervalSeconds, DEFAULT_SYNC_CONFIG.pollIntervalSeconds),
     deviceId: String(runtimeSync.deviceId || "").trim() || getDeviceId(),
   };
@@ -105,14 +112,53 @@ export function getCloudSyncConfig(state) {
     ? state.settings.cloudSync
     : {};
 
+  const managedByRuntime = defaults.managedByRuntime || toBoolean(source.managedByRuntime, false);
+  const runtimeManaged = managedByRuntime;
+
+  const provider = runtimeManaged
+    ? (defaults.provider || source.provider || DEFAULT_SYNC_CONFIG.provider)
+    : (source.provider || defaults.provider || DEFAULT_SYNC_CONFIG.provider);
+
+  const enabled = runtimeManaged
+    ? toBoolean(defaults.enabled, DEFAULT_SYNC_CONFIG.enabled)
+    : toBoolean(source.enabled, defaults.enabled);
+
+  const apiBaseUrl = runtimeManaged
+    ? cleanUrl(defaults.apiBaseUrl || source.apiBaseUrl || DEFAULT_SYNC_CONFIG.apiBaseUrl)
+    : cleanUrl(source.apiBaseUrl || defaults.apiBaseUrl || DEFAULT_SYNC_CONFIG.apiBaseUrl);
+
+  const projectUrl = runtimeManaged
+    ? cleanUrl(defaults.projectUrl || source.projectUrl || "")
+    : cleanUrl(source.projectUrl || defaults.projectUrl);
+
+  const anonKey = runtimeManaged
+    ? String(defaults.anonKey || source.anonKey || "").trim()
+    : String(source.anonKey || defaults.anonKey || "").trim();
+
+  const tableName = runtimeManaged
+    ? String(defaults.tableName || source.tableName || DEFAULT_SYNC_CONFIG.tableName).trim() || DEFAULT_SYNC_CONFIG.tableName
+    : String(source.tableName || defaults.tableName || DEFAULT_SYNC_CONFIG.tableName).trim() || DEFAULT_SYNC_CONFIG.tableName;
+
+  const workspaceKey = runtimeManaged
+    ? String(defaults.workspaceKey || source.workspaceKey || "").trim()
+    : String(source.workspaceKey || defaults.workspaceKey || "").trim();
+
+  const workspaceId = runtimeManaged
+    ? String(defaults.workspaceId || source.workspaceId || defaults.workspaceKey || source.workspaceKey || "").trim()
+    : String(source.workspaceId || defaults.workspaceId || source.workspaceKey || defaults.workspaceKey || "").trim();
+
   return {
     ...defaults,
     ...source,
-    enabled: toBoolean(source.enabled, defaults.enabled),
-    projectUrl: cleanUrl(source.projectUrl || defaults.projectUrl),
-    anonKey: String(source.anonKey || defaults.anonKey || "").trim(),
-    tableName: String(source.tableName || defaults.tableName || DEFAULT_SYNC_CONFIG.tableName).trim() || DEFAULT_SYNC_CONFIG.tableName,
-    workspaceKey: String(source.workspaceKey || defaults.workspaceKey || "").trim(),
+    enabled,
+    managedByRuntime,
+    provider,
+    apiBaseUrl,
+    projectUrl,
+    anonKey,
+    tableName,
+    workspaceKey,
+    workspaceId,
     pollIntervalSeconds: toNumber(source.pollIntervalSeconds, defaults.pollIntervalSeconds),
     lastSyncedAt: String(source.lastSyncedAt || ""),
     lastPulledAt: String(source.lastPulledAt || ""),
@@ -133,13 +179,19 @@ export function withCloudSyncSettings(state) {
 
 export function hasCloudSyncConfigured(state) {
   const config = getCloudSyncConfig(state);
-  return Boolean(
-    config.enabled
-      && config.provider === "supabase"
-      && config.projectUrl
-      && config.anonKey
-      && config.workspaceKey,
-  );
+  if (!config.enabled) {
+    return false;
+  }
+
+  if (config.provider === "vercel-proxy") {
+    return Boolean(config.apiBaseUrl);
+  }
+
+  if (config.provider === "supabase") {
+    return Boolean(config.projectUrl && config.anonKey && config.workspaceKey);
+  }
+
+  return false;
 }
 
 function toBase64Url(value = "") {
@@ -164,11 +216,14 @@ export function exportSyncProfile(state) {
   const config = getCloudSyncConfig(state);
   const payload = {
     enabled: config.enabled,
+    managedByRuntime: config.managedByRuntime,
     provider: config.provider,
+    apiBaseUrl: config.apiBaseUrl,
     projectUrl: config.projectUrl,
     anonKey: config.anonKey,
     tableName: config.tableName,
     workspaceKey: config.workspaceKey,
+    workspaceId: config.workspaceId,
     pollIntervalSeconds: config.pollIntervalSeconds,
   };
   return `lifeos-sync:${toBase64Url(JSON.stringify(payload))}`;
@@ -185,11 +240,14 @@ export function importSyncProfile(rawProfile = "") {
 
   return {
     enabled: toBoolean(parsed.enabled, true),
+    managedByRuntime: toBoolean(parsed.managedByRuntime, false),
     provider: parsed.provider || "supabase",
+    apiBaseUrl: cleanUrl(parsed.apiBaseUrl || parsed.endpoint || DEFAULT_SYNC_CONFIG.apiBaseUrl),
     projectUrl: cleanUrl(parsed.projectUrl || parsed.url || ""),
     anonKey: String(parsed.anonKey || parsed.publishableKey || parsed.apiKey || "").trim(),
     tableName: String(parsed.tableName || DEFAULT_SYNC_CONFIG.tableName).trim() || DEFAULT_SYNC_CONFIG.tableName,
     workspaceKey: String(parsed.workspaceKey || "").trim(),
+    workspaceId: String(parsed.workspaceId || parsed.workspaceKey || "").trim(),
     pollIntervalSeconds: toNumber(parsed.pollIntervalSeconds, DEFAULT_SYNC_CONFIG.pollIntervalSeconds),
   };
 }
@@ -201,6 +259,14 @@ function buildRequestHeaders(config) {
     "Content-Type": "application/json",
     "x-workspace-key": config.workspaceKey,
   };
+}
+
+function buildProxyEndpoint(config) {
+  const base = config.apiBaseUrl || DEFAULT_SYNC_CONFIG.apiBaseUrl;
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return new URL(base, window.location.origin);
+  }
+  return new URL(base, "https://life-os-sync.local");
 }
 
 async function buildRemoteError(response, fallbackMessage) {
@@ -364,11 +430,14 @@ function mergeSettings(localState, remoteState) {
     cloudSync: {
       ...dominantSync,
       enabled: dominantSync.enabled || localSync.enabled,
+      managedByRuntime: dominantSync.managedByRuntime || localSync.managedByRuntime,
       provider: dominantSync.provider || localSync.provider,
+      apiBaseUrl: dominantSync.apiBaseUrl || localSync.apiBaseUrl,
       projectUrl: dominantSync.projectUrl || localSync.projectUrl,
       anonKey: dominantSync.anonKey || localSync.anonKey,
       tableName: dominantSync.tableName || localSync.tableName,
       workspaceKey: dominantSync.workspaceKey || localSync.workspaceKey,
+      workspaceId: dominantSync.workspaceId || localSync.workspaceId,
       pollIntervalSeconds: dominantSync.pollIntervalSeconds || localSync.pollIntervalSeconds,
       deviceId: localSync.deviceId || dominantSync.deviceId || getDeviceId(),
       lastSyncedAt: localSync.lastSyncedAt || "",
@@ -421,6 +490,27 @@ async function readRemoteSnapshot(state, config = getCloudSyncConfig(state)) {
     return null;
   }
 
+  if (config.provider === "vercel-proxy") {
+    const endpoint = buildProxyEndpoint(config);
+    if (config.workspaceId) {
+      endpoint.searchParams.set("workspaceId", config.workspaceId);
+    }
+
+    const response = await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(await buildRemoteError(response, "Nao foi possivel buscar o snapshot remoto."));
+    }
+
+    const payload = await response.json();
+    return payload?.row || null;
+  }
+
   const endpoint = new URL(`/rest/v1/${config.tableName}`, `${config.projectUrl}/`);
   endpoint.searchParams.set("select", "workspace_key,state,revision,updated_at,updated_by");
   endpoint.searchParams.set("workspace_key", `eq.${config.workspaceKey}`);
@@ -441,6 +531,29 @@ async function readRemoteSnapshot(state, config = getCloudSyncConfig(state)) {
 
 async function writeRemoteSnapshot(state, config = getCloudSyncConfig(state)) {
   if (!hasCloudSyncConfigured({ settings: { cloudSync: config } })) {
+    return state;
+  }
+
+  if (config.provider === "vercel-proxy") {
+    const endpoint = buildProxyEndpoint(config);
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        workspaceId: config.workspaceId || config.workspaceKey || "",
+        state,
+        revision: Number(state.meta?.revision || 0),
+        updatedAt: state.meta?.updatedAt || new Date().toISOString(),
+        updatedBy: config.deviceId,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(await buildRemoteError(response, "Nao foi possivel salvar o snapshot remoto."));
+    }
+
     return state;
   }
 
@@ -477,7 +590,7 @@ export async function diagnoseCloudSync(state) {
     return {
       ok: false,
       code: "missing-config",
-      message: "Preencha Project URL, Anon Key e Workspace Key iguais nos dois dispositivos.",
+      message: "A sincronizacao automatica ainda nao foi configurada no deploy.",
     };
   }
 

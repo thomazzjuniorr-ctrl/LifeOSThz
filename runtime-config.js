@@ -24,12 +24,15 @@ window.__LIFE_OS_RUNTIME__ = window.__LIFE_OS_RUNTIME__ || {
     calendarId: "primary",
   },
   sync: {
-    enabled: false,
-    provider: "supabase",
+    enabled: true,
+    managedByRuntime: true,
+    provider: "vercel-proxy",
+    apiBaseUrl: "/api/sync",
     projectUrl: "",
     anonKey: "",
     tableName: "life_os_snapshots",
     workspaceKey: "",
+    workspaceId: "",
     pollIntervalSeconds: 20,
   },
   pwa: {

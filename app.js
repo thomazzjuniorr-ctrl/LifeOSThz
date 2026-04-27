@@ -200,13 +200,14 @@ function usesHeaderControls(section = "") {
 }
 
 function renderSyncBadge(model) {
-  const ready = hasCloudSyncConfigured({ settings: { cloudSync: model.settings.cloudSync } });
-  const syncing = Boolean(model.settings.cloudSync.enabled);
+  const sync = model.settings.cloudSync || {};
+  const ready = hasCloudSyncConfigured({ settings: { cloudSync: sync } });
+  const syncing = Boolean(sync.enabled);
   if (ready) {
-    return `<span class="sync-badge ready">Sync ativo</span>`;
+    return `<span class="sync-badge ready">${sync.managedByRuntime ? "Sync automatico" : "Sync ativo"}</span>`;
   }
   if (syncing) {
-    return `<span class="sync-badge waiting">Configurar sync</span>`;
+    return `<span class="sync-badge waiting">${sync.managedByRuntime ? "Aguardando backend" : "Configurar sync"}</span>`;
   }
   return `<span class="sync-badge local">So local</span>`;
 }
@@ -224,6 +225,10 @@ function maskSyncValue(value = "", visible = 6) {
 
 function getMissingSyncFields(sync = {}) {
   const missing = [];
+  if (sync.provider === "vercel-proxy") {
+    if (!sync.apiBaseUrl) missing.push("API Sync");
+    return missing;
+  }
   if (!sync.projectUrl) missing.push("Project URL");
   if (!sync.anonKey) missing.push("Anon Key");
   if (!sync.workspaceKey) missing.push("Workspace Key");
@@ -239,7 +244,7 @@ function renderSyncCallout(model) {
     return `
       <div class="callout">
         <strong>Este dispositivo esta local.</strong>
-        <p>Sem uma configuracao online compartilhada, celular e desktop ficam isolados. Ative a sincronizacao para unificar os dois.</p>
+        <p>Sem uma configuracao online compartilhada, celular e desktop ficam isolados. Ative a sincronizacao automatica no deploy para unificar os dois.</p>
       </div>
     `;
   }
@@ -247,8 +252,8 @@ function renderSyncCallout(model) {
   if (!ready) {
     return `
       <div class="callout warning">
-        <strong>Sync ligado, mas incompleto.</strong>
-        <p>Faltam: ${escapeHtml(missing.join(", "))}. Sem esses dados iguais nos dois dispositivos, eles nao conversam.</p>
+        <strong>Sync automatico ainda incompleto.</strong>
+        <p>${sync.managedByRuntime ? "O app esta esperando a configuracao do backend na Vercel." : `Faltam: ${escapeHtml(missing.join(", "))}.`}</p>
       </div>
     `;
   }
@@ -265,7 +270,7 @@ function renderSyncCallout(model) {
   return `
     <div class="callout success">
       <strong>Dispositivo pronto para compartilhar dados.</strong>
-      <p>Use o mesmo perfil de sincronizacao no celular e no desktop. Depois disso, Inbox, Checklist, Agenda, Organizar e Projetos passam a usar o mesmo workspace.</p>
+      <p>${sync.managedByRuntime ? "O deploy define o workspace automaticamente. Abra no mobile e no desktop que os dois passam a usar a mesma base." : "Use o mesmo perfil de sincronizacao no celular e no desktop. Depois disso, Inbox, Checklist, Agenda, Organizar e Projetos passam a usar o mesmo workspace."}</p>
     </div>
   `;
 }
@@ -1673,42 +1678,64 @@ function renderSettingsPage(model, options = {}) {
       <div class="field-grid two">
         <label class="field">
           <span>Ativar sincronizacao</span>
-          <select name="syncEnabled">
+          <select name="syncEnabled" ${model.settings.cloudSync.managedByRuntime ? "disabled" : ""}>
             <option value="false" ${!model.settings.cloudSync.enabled ? "selected" : ""}>Desligada</option>
             <option value="true" ${model.settings.cloudSync.enabled ? "selected" : ""}>Ligada</option>
           </select>
         </label>
         <label class="field">
           <span>Provider</span>
-          <select name="syncProvider">
+          <select name="syncProvider" ${model.settings.cloudSync.managedByRuntime ? "disabled" : ""}>
+            <option value="vercel-proxy" ${model.settings.cloudSync.provider === "vercel-proxy" ? "selected" : ""}>Vercel automatico</option>
             <option value="supabase" ${model.settings.cloudSync.provider === "supabase" ? "selected" : ""}>Supabase</option>
           </select>
         </label>
       </div>
-      <div class="field-grid two">
-        <label class="field"><span>Project URL</span><input name="syncProjectUrl" value="${escapeHtml(model.settings.cloudSync.projectUrl || "")}" placeholder="https://SEU-PROJETO.supabase.co" /></label>
-        <label class="field"><span>Anon / Publishable Key</span><input name="syncAnonKey" value="${escapeHtml(model.settings.cloudSync.anonKey || "")}" placeholder="sb_publishable_... ou anon key" /></label>
-      </div>
-      <div class="field-grid three">
-        <label class="field"><span>Tabela</span><input name="syncTableName" value="${escapeHtml(model.settings.cloudSync.tableName || "life_os_snapshots")}" /></label>
-        <label class="field"><span>Workspace Key</span><input name="syncWorkspaceKey" value="${escapeHtml(model.settings.cloudSync.workspaceKey || "")}" placeholder="chave privada do workspace" /></label>
-        <label class="field"><span>Intervalo (s)</span><input type="number" min="10" name="syncPollIntervalSeconds" value="${escapeHtml(model.settings.cloudSync.pollIntervalSeconds || 20)}" /></label>
-      </div>
+      ${model.settings.cloudSync.managedByRuntime ? `
+        <div class="callout subtle">
+          <strong>Modo automatico pelo deploy</strong>
+          <p>O app usa a rota ${escapeHtml(model.settings.cloudSync.apiBaseUrl || "/api/sync")} e espera a configuracao central na Vercel. Nenhum aparelho precisa ser configurado manualmente.</p>
+        </div>
+        <div class="field-grid three">
+          <label class="field"><span>Provider</span><input value="${escapeHtml(model.settings.cloudSync.provider || "vercel-proxy")}" readonly /></label>
+          <label class="field"><span>Endpoint</span><input value="${escapeHtml(model.settings.cloudSync.apiBaseUrl || "/api/sync")}" readonly /></label>
+          <label class="field"><span>Intervalo (s)</span><input type="number" min="10" name="syncPollIntervalSeconds" value="${escapeHtml(model.settings.cloudSync.pollIntervalSeconds || 20)}" /></label>
+        </div>
+      ` : `
+        <div class="field-grid two">
+          <label class="field"><span>Project URL</span><input name="syncProjectUrl" value="${escapeHtml(model.settings.cloudSync.projectUrl || "")}" placeholder="https://SEU-PROJETO.supabase.co" /></label>
+          <label class="field"><span>Anon / Publishable Key</span><input name="syncAnonKey" value="${escapeHtml(model.settings.cloudSync.anonKey || "")}" placeholder="sb_publishable_... ou anon key" /></label>
+        </div>
+        <div class="field-grid three">
+          <label class="field"><span>Tabela</span><input name="syncTableName" value="${escapeHtml(model.settings.cloudSync.tableName || "life_os_snapshots")}" /></label>
+          <label class="field"><span>Workspace Key</span><input name="syncWorkspaceKey" value="${escapeHtml(model.settings.cloudSync.workspaceKey || "")}" placeholder="chave privada do workspace" /></label>
+          <label class="field"><span>Intervalo (s)</span><input type="number" min="10" name="syncPollIntervalSeconds" value="${escapeHtml(model.settings.cloudSync.pollIntervalSeconds || 20)}" /></label>
+        </div>
+      `}
       <div class="toolbar-row">
-        <button class="ghost-button" type="button" data-action="generate-sync-key">Gerar workspace key</button>
-        <button class="ghost-button" type="button" data-action="copy-sync-profile">Copiar perfil</button>
-        <button class="ghost-button" type="button" data-action="import-sync-profile">Importar perfil</button>
         <button class="ghost-button" type="button" data-action="sync-cloud-now">Sincronizar agora</button>
       </div>
-      <div class="callout subtle">
-        <strong>Setup rapido</strong>
-        <p>1. Configure uma vez no desktop. 2. Clique em salvar. 3. Use “Copiar perfil” e cole no mobile em “Importar perfil”. 4. Clique em sincronizar agora nos dois dispositivos.</p>
-      </div>
+      ${model.settings.cloudSync.managedByRuntime ? `
+        <div class="callout subtle">
+          <strong>Setup rapido</strong>
+          <p>1. Configure as variaveis na Vercel uma vez. 2. Redeploy. 3. Abra o app no mobile e no desktop. 4. Os dois ja passam a apontar para o mesmo workspace automaticamente.</p>
+        </div>
+      ` : `
+        <details class="callout subtle advanced-sync-tools">
+          <summary><strong>Ferramentas avancadas</strong></summary>
+          <p>Use isso apenas se quiser manter o modo manual por perfil compartilhado.</p>
+          <div class="toolbar-row">
+            <button class="ghost-button" type="button" data-action="generate-sync-key">Gerar workspace key</button>
+            <button class="ghost-button" type="button" data-action="copy-sync-profile">Copiar perfil</button>
+            <button class="ghost-button" type="button" data-action="import-sync-profile">Importar perfil</button>
+          </div>
+        </details>
+      `}
       <div class="meta-row">${metaPills([
         model.settings.cloudSync.lastSyncedAt ? `Ultimo envio: ${formatShortDate(model.settings.cloudSync.lastSyncedAt.slice(0, 10))}` : "Sem envio ainda",
         model.settings.cloudSync.lastPulledAt ? `Ultima leitura: ${formatShortDate(model.settings.cloudSync.lastPulledAt.slice(0, 10))}` : "Sem leitura ainda",
         model.settings.cloudSync.lastError ? `Erro: ${model.settings.cloudSync.lastError}` : "Sincronizacao sem erro registrado",
-        `Workspace: ${escapeHtml(maskSyncValue(model.settings.cloudSync.workspaceKey || ""))}`,
+        `Workspace: ${escapeHtml(maskSyncValue(model.settings.cloudSync.workspaceId || model.settings.cloudSync.workspaceKey || ""))}`,
         `Device: ${escapeHtml(maskSyncValue(model.settings.cloudSync.deviceId || ""))}`,
       ])}</div>
     `, model, { advancedMode }),

@@ -2,100 +2,62 @@
 
 ## Diagnostico da persistencia atual
 
-Hoje o app funciona em modo `local-first`.
+Hoje o app continua `local-first`.
 
-Persistencia atual:
+Persistencia local:
 
-- `storage.js` salva o estado principal no `IndexedDB`
-- se o navegador nao suportar `IndexedDB`, ele usa `localStorage` como fallback
-- tudo o que voce mexe em:
-  - Inbox / Entrada
-  - Checklist / Tarefas
-  - Organizar
-  - Agenda
-  - Projetos
-  - Sprints
-  - Configuracoes principais
+- `storage.js` salva no `IndexedDB`
+- se `IndexedDB` falhar, usa `localStorage`
+- isso cobre Inbox, Checklist, Organizar, Agenda, Projetos, Sprints e configuracoes
 
-entra dentro de um `snapshot` unico do app
+Por que mobile e desktop ficavam separados:
 
-Por que hoje nao sincroniza entre dispositivos por padrao:
+- cada navegador mantinha seu proprio banco local
+- sem uma camada online, um aparelho nao sabia o que o outro tinha salvo
 
-- `IndexedDB` e `localStorage` pertencem a cada navegador/dispositivo
-- celular e desktop ficam com bancos locais separados
-- a nuvem ja existia como base tecnica opcional, mas depende de configuracao real
-- sem `Supabase + workspace key` iguais nos dois dispositivos, cada um continua isolado
+## Solucao adotada
 
-Em resumo:
+Agora o fluxo principal de sincronizacao ficou:
 
-- localmente o app salva certo
-- entre dispositivos ele nao conversa sozinho sem uma camada online
-- nesta versao, quando um dispositivo ja tem atividades locais e encontra a nuvem pela primeira vez, o app faz merge nao destrutivo e espelha o resultado
+- app publicado na Vercel
+- frontend chama `/api/sync`
+- `api/sync.js` roda no servidor da Vercel
+- a funcao usa o Supabase com chave privada do servidor
+- mobile e desktop passam a usar o mesmo workspace automaticamente
 
-## Solucao escolhida
+Isso reduz drasticamente a configuracao manual por aparelho.
 
-Para esta fase, o app usa um modelo `local-first + nuvem opcional`.
+## Regras da sincronizacao
 
-- Local-first: continua rapido e funciona bem no navegador.
-- Nuvem opcional: quando configurada, sincroniza o estado entre celular e desktop.
-- Provider atual: `Supabase`
-- Estrategia de conflito: `alteracao mais recente vence`
-- Regra tecnica: cada item importante usa `updatedAt` e o estado geral usa `revision + meta.updatedAt`
+- sync automatico ao abrir o app
+- sync automatico ao salvar, editar, mover ou concluir
+- sync automatico ao voltar foco para a aba
+- sync automatico em intervalo curto
+- `Sincronizar agora` continua como opcao manual extra
 
-Essa escolha funciona bem com o deploy estatico atual na Vercel e deixa a arquitetura pronta para, depois, trocar a protecao por `Google Auth` sem reescrever o restante do app.
+Regra de conflito:
 
-## O que o app sincroniza
+- alteracao mais recente vence
+- cada item usa `updatedAt`
+- o estado geral usa `revision + meta.updatedAt`
 
-O app salva um `snapshot` unico do workspace.
+Regra de preservacao:
 
-Isso cobre:
+- o app nunca deve apagar cegamente o que ja existe localmente
+- na primeira sincronizacao ele junta local + nuvem
+- depois espelha o resultado
 
-- tarefas
-- inbox
-- organize
-- agenda
-- checklist
-- projetos
-- sprints
-- configuracoes
+## O que sincroniza
 
-Prioridade funcional nesta fase:
+Prioridade desta fase:
 
 1. Entrada / Inbox
 2. Checklist / Tarefas
-3. Agenda
-4. Organizar
+3. Organizar
+4. Agenda
 5. Projetos
-
-No uso real, isso significa:
-
-- o que voce captura no celular deve aparecer no desktop
-- o que voce reorganiza no desktop deve aparecer no celular
-- mudancas de tarefas, agenda e projetos passam a viajar no mesmo workspace
-
-Nesta etapa, os fluxos mais importantes ficaram cobertos:
-
-1. criar tarefa no Inbox
-2. editar tarefa
-3. mover tarefa no Organizar
-4. mover tarefa na Agenda
-5. marcar checklist como concluido
-6. alterar projeto
-7. alterar sprint atual
-
-## Timezone padrao
-
-O calendario interno agora usa:
-
-- `America/Sao_Paulo`
-
-Isso vale para:
-
-- Hoje
-- semana atual
-- agenda
-- filtros por data
-- data padrao da captura
+6. Sprints / Linha de Raciocinio
+7. Configuracoes essenciais
 
 ## Estrutura esperada no Supabase
 
@@ -109,205 +71,102 @@ create table if not exists public.life_os_snapshots (
   updated_at timestamptz not null default now(),
   updated_by text
 );
-
-alter table public.life_os_snapshots enable row level security;
-
-create policy "life_os_select_by_workspace_header"
-on public.life_os_snapshots
-for select
-to anon, authenticated
-using (
-  workspace_key = coalesce(
-    current_setting('request.headers', true)::json->>'x-workspace-key',
-    ''
-  )
-);
-
-create policy "life_os_insert_by_workspace_header"
-on public.life_os_snapshots
-for insert
-to anon, authenticated
-with check (
-  workspace_key = coalesce(
-    current_setting('request.headers', true)::json->>'x-workspace-key',
-    ''
-  )
-);
-
-create policy "life_os_update_by_workspace_header"
-on public.life_os_snapshots
-for update
-to anon, authenticated
-using (
-  workspace_key = coalesce(
-    current_setting('request.headers', true)::json->>'x-workspace-key',
-    ''
-  )
-)
-with check (
-  workspace_key = coalesce(
-    current_setting('request.headers', true)::json->>'x-workspace-key',
-    ''
-  )
-);
 ```
 
-## Seguranca e chaves
+Se quiser restringir o acesso somente pelo backend da Vercel, use a `service_role key` apenas na Vercel e nao no frontend.
 
-O frontend pode usar:
+## Variaveis da Vercel
 
-- `Project URL` do Supabase
-- `Anon / Publishable Key`
+No projeto da Vercel, abra `Settings -> Environment Variables` e crie:
 
-Esses dois valores sao publicos por natureza e podem ficar no navegador.
+- `LIFE_OS_SUPABASE_URL`
+- `LIFE_OS_SUPABASE_SERVICE_ROLE_KEY`
+- `LIFE_OS_SYNC_TABLE`
+  - valor recomendado: `life_os_snapshots`
+- `LIFE_OS_SYNC_WORKSPACE_ID`
+  - valor recomendado: um identificador fixo, por exemplo `life-os-thz-main`
 
-O que **nao** pode ir para o frontend nem para o GitHub:
+Depois:
+
+1. salve as variaveis
+2. faça `Redeploy`
+3. abra o app no desktop
+4. abra o app no mobile
+5. os dois passam a apontar para o mesmo workspace automaticamente
+
+## Configuracao no frontend
+
+O arquivo `runtime-config.js` desta versao ja deixa o app apontando para o modo automatico:
+
+- `provider`: `vercel-proxy`
+- `apiBaseUrl`: `/api/sync`
+- `managedByRuntime`: `true`
+
+Ou seja:
+
+- nao precisa repetir Project URL em cada aparelho
+- nao precisa repetir workspace key em cada aparelho
+- nao precisa copiar perfil para o fluxo principal
+
+`Copiar perfil` e `Importar perfil` ficam apenas como fallback avancado.
+
+## Seguranca
+
+Nunca coloque no frontend:
 
 - `service_role key`
 - qualquer segredo privado do Supabase
 
-Sobre a `Workspace Key`:
+Pode ficar publico no app apenas se voce optar por fallback manual:
 
-- ela funciona como chave do workspace compartilhado entre os seus dispositivos
-- voce pode digitar essa chave dentro do app e deixar salva localmente
-- o ideal e **nao** commitar uma workspace key real no GitHub
+- `anon key`
+- `project url`
 
-Recomendacao pratica:
-
-- deixe `runtime-config.js` com valores vazios no repositório
-- preencha a configuracao dentro da aba `Configuracoes` no celular e no desktop
-
-Assim:
-
-- nada sensivel vai para o GitHub
-- a chave publica do Supabase continua segura para uso no frontend
-- sua `workspace key` fica sob seu controle
-
-## Como configurar no app
-
-Abra `Configuracoes` e preencha:
-
-- `Ativar sincronizacao`: `Ligada`
-- `Provider`: `Supabase`
-- `Project URL`: URL do seu projeto Supabase
-- `Anon / Publishable Key`: chave publica do projeto
-- `Tabela`: `life_os_snapshots`
-- `Workspace Key`: uma chave privada sua
-- `Intervalo (s)`: recomendado `20`
-
-Depois:
-
-1. Clique em `Gerar workspace key` se quiser criar uma chave forte.
-2. Clique em `Salvar configuracoes`.
-3. Clique em `Copiar perfil`.
-4. No outro dispositivo, abra `Configuracoes` e clique em `Importar perfil`.
-5. Clique em `Sincronizar agora`.
-
-Assim voce evita erro de digitacao e garante que celular e desktop usem exatamente o mesmo `Project URL`, `Anon Key`, `Tabela` e `Workspace Key`.
-
-## Vercel
-
-Para esta versao estatica do app, voce **nao precisa** configurar variaveis obrigatorias na Vercel para a sincronizacao funcionar.
-
-Opcoes:
-
-1. `Mais simples e recomendada agora`
-   - deixar `runtime-config.js` vazio
-   - configurar o Supabase dentro do proprio app em `Configuracoes`
-
-2. `Prefill publico`
-   - colocar no `runtime-config.js` apenas:
-     - `projectUrl`
-     - `anonKey`
-     - `tableName`
-     - `pollIntervalSeconds`
-   - continuar preenchendo a `workspace key` manualmente no app
-
-Como o deploy atual e estatico, a Vercel nao injeta env no frontend automaticamente sem um fluxo extra de build/server.
-
-Entao, para esta fase:
-
-- Vercel publica o site
-- Supabase guarda o snapshot compartilhado
-- a configuracao do sync pode ser feita diretamente pela interface do app
+No fluxo automatico atual, o segredo fica do lado do servidor da Vercel.
 
 ## Como funciona no uso diario
 
-- Voce captura algo no celular.
-- O app salva localmente e empurra para o snapshot remoto.
-- No desktop, o app busca atualizacoes ao abrir, ao voltar o foco e em intervalo automatico.
-- O merge agora prioriza as entidades mais novas por `updatedAt`, reduzindo o risco de um dispositivo sobrescrever tarefas ou projetos mais recentes do outro.
+1. voce abre o app no desktop
+2. ele puxa o estado remoto automaticamente
+3. voce cria ou move uma tarefa
+4. ele salva localmente e envia para a nuvem
+5. no mobile, ao abrir ou voltar para o app, o dado aparece
 
-Fluxo atual da sincronizacao:
-
-1. `Salvar algo`
-   - atualiza o estado local
-   - gera novo `revision`
-   - tenta enviar para o Supabase
-2. `Abrir o app`
-   - tenta puxar o snapshot remoto
-   - faz merge com o estado local
-3. `Voltar o foco para a aba`
-   - tenta sincronizar de novo
-4. `Intervalo automatico`
-   - roda a cada `pollIntervalSeconds`
-5. `Sincronizar agora`
-   - forca uma atualizacao manual
-
-Importante sobre atividades ja existentes:
-
-- o app nao deve apagar suas atividades locais quando voce ligar a sincronizacao
-- ele junta o que ja existe no dispositivo com o que ja existe na nuvem
-- depois espelha o resultado para o outro dispositivo
-
-Isso deixa a arquitetura pronta para realtime depois, sem depender disso agora.
-
-## Testes obrigatorios
+## Testes recomendados
 
 ### Teste 1
 
-1. Abra o app no desktop
-2. Va em `Entrada`
-3. Crie uma tarefa na Inbox
-4. Abra o app no mobile com a mesma configuracao de sync
-5. Confirme que a tarefa apareceu
+1. deixe uma tarefa antiga no desktop
+2. deixe outra tarefa antiga no mobile
+3. abra os dois
+4. confirme que as duas aparecem nos dois
 
 ### Teste 2
 
-1. Abra o app no mobile
-2. Crie uma tarefa na Inbox
-3. Abra o app no desktop
-4. Clique em `Sincronizar agora` ou aguarde o intervalo
-5. Confirme que a tarefa apareceu
+1. crie uma nova tarefa no mobile
+2. abra ou atualize o desktop
+3. confirme que ela apareceu
 
 ### Teste 3
 
-1. No desktop, arraste uma tarefa na `Agenda` para outro dia
-2. Aguarde o sync ou clique em `Sincronizar agora`
-3. Abra o mobile
-4. Confirme que o novo dia apareceu igual
+1. crie uma nova tarefa no desktop
+2. abra ou atualize o mobile
+3. confirme que ela apareceu
 
 ### Teste 4
 
-1. No mobile ou desktop, marque um item de `Checklist` como concluido
-2. Aguarde o sync ou clique em `Sincronizar agora`
-3. Abra o outro dispositivo
-4. Confirme que o item apareceu concluido tambem
+1. mova uma tarefa na Agenda
+2. confirme que o outro dispositivo refletiu o novo dia
 
-## Limitacao atual
+### Teste 5
 
-Nesta versao, a seguranca entre dispositivos usa `workspace key` + politica por header.
+1. conclua uma tarefa no Checklist
+2. confirme que o outro dispositivo refletiu a conclusao
 
-Isso e bom para a fase atual, mas o proximo passo ideal e:
+## Evolucao futura
 
-- login Google
-- identificacao por usuario
-- politicas por sessao autenticada
+O proximo passo ideal depois disso e:
 
-## Proximo passo natural
-
-Quando quiser endurecer a seguranca e simplificar o setup por dispositivo:
-
-- manter o Supabase
-- ativar `Google Auth`
-- substituir a `workspace key` por sessao autenticada
+- autenticar com Google
+- trocar workspace fixo por usuario autenticado
+- manter a mesma estrutura de sync
